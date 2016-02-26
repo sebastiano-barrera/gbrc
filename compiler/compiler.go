@@ -9,13 +9,18 @@ import (
 
 type Address uint16
 type Size uint16
-
 type Condition int
 
 const (
 	CondAlways Condition = iota
 	CondZero
 )
+
+type InvalidOpcode uint8
+
+func (ie InvalidOpcode) Error() string {
+	return fmt.Sprintf("invalid opcode: 0x%02x", uint8(ie))
+}
 
 var (
 	ErrInvalidInstrOffset = errors.New("Invalid offset for an instruction")
@@ -115,7 +120,13 @@ func NewCompiler(input io.ReadSeeker, arch Arch) Compiler {
 func (c *Compiler) Compile() error {
 	for len(c.codeRegions) > 0 {
 		err := c.arch.CompileOpcode(c)
-		if err != nil {
+		if err == io.EOF {
+			if len(c.codeRegions) > 0 {
+				c.PlaceHalt()
+				continue
+			}
+			break
+		} else if err != nil {
 			return err
 		}
 	}
@@ -217,16 +228,20 @@ func (c *Compiler) PlaceHalt() {
 }
 
 func (c *Compiler) WriteTo(w io.Writer) {
-	fmt.Fprintf(w, "# %d code regions\n", len(c.codeRegions))
+	fmt.Fprintf(w, "package code\n")
+	fmt.Fprintf(w, "type Machine struct{}\n")
+	fmt.Fprintf(w, "type Block func(m *Machine) *Block\n")
+	fmt.Fprintf(w, "// %d code regions\n", len(c.codeRegions))
 	for _, addr := range c.codeRegions {
-		fmt.Fprintf(w, "%d %v", addr, c.blocks[addr])
+		fmt.Fprintf(w, "// %d: %v", addr, c.blocks[addr])
 	}
 
-	fmt.Fprintf(w, "# %d blocks\n", len(c.blocks))
+	fmt.Fprintf(w, "// %d blocks\n", len(c.blocks))
 	for addr, block := range c.blocks {
-		fmt.Fprintf(w, "block @ %04x [%d] {\n", addr, block.CodeSize)
-		for index, stmt := range block.Body {
-			fmt.Fprintf(w, "\t%4d %v\n", index, stmt)
+		fmt.Fprintf(w, "// %d bytes\n", block.CodeSize)
+		fmt.Fprintf(w, "func Block_%04x(m *Machine) *Block {\n", addr)
+		for _, stmt := range block.Body {
+			fmt.Fprintf(w, "%s\n", stmt.output)
 		}
 		fmt.Fprintf(w, "}\n\n")
 	}

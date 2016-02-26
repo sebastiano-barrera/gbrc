@@ -1,8 +1,8 @@
 package gb
 
 import (
-	"errors"
 	"fmt"
+	"os"
 	"gbrc/compiler"
 	"io"
 )
@@ -18,6 +18,8 @@ type CompositeReg struct{ lo, hi Register8 }
 type IndirectComposite CompositeReg
 type Immediate16 uint16
 type Immediate8 uint16
+type StaticParam int
+type Condition string
 
 const (
 	A Register8 = iota
@@ -31,6 +33,18 @@ const (
 
 	SP Register16 = iota
 	PC
+
+	IfNZ = Condition("(! m.Flag(FlagZero))")
+	IfZ  = Condition("m.Flag(FlagZero)")
+	IfNC = Condition("(! m.Flag(FlagCarry))")
+	IfC  = Condition("m.Flag(FlagCarry)")
+)
+
+var (
+	HL = CompositeReg{H, L}
+	AF = CompositeReg{A, F}
+	BC = CompositeReg{B, C}
+	DE = CompositeReg{D, E}
 )
 
 // Represents an expression in the compiled code
@@ -50,18 +64,29 @@ func MkExpr(size uint, format string, args ...Place) *Expr {
 // the compiled code, the value of the represented place;
 // p.Setter(value) must return the *statement* that sets the place to
 // the given value, checking that the size is correct by using the
-// value's Size() method. (If the size is wrong, errSizeMismatch
-// should be returned).
+// value's Size() method. (If the size is wrong, a SizeMismatch
+// should be returned as error).
 type Place interface {
 	fmt.Stringer
 	Setter(value Place) (string, error)
-	Size() uint // In bytes
+	Size() uint // In bytes; Size() == 0 reserved for "static" operands
 }
 
-var (
-	errReadOnly     = errors.New("compiler error: place is read-only")
-	errSizeMismatch = errors.New("compiler error: assignment size mismatch")
+// Errors
+type (
+	SizeMismatch struct {left, right Place}
+	ReadOnlyWrite  struct{place Place}
 )
+
+func (sm SizeMismatch) Error() string {
+	return fmt.Sprintf("size mismatch: %v <> %v (%d != %d)",
+		sm.left, sm.right, sm.left.Size(), sm.right.Size())
+}
+
+func (ro ReadOnlyWrite) Error() string {
+	return fmt.Sprintf("place is read-only: %v", ro.place)
+}
+
 
 //
 // Implementations of Place for all the operand types
@@ -72,22 +97,20 @@ func (imm Immediate8) String() string {
 }
 
 func (imm Immediate8) Setter(value Place) (string, error) {
-	return "", errReadOnly
+	return "", ReadOnlyWrite{imm}
 }
 
 func (imm Immediate8) Size() uint { return 1 }
-
 
 func (imm Immediate16) String() string {
 	return fmt.Sprintf("0x%04x", uint16(imm))
 }
 
 func (imm Immediate16) Setter(value Place) (string, error) {
-	return "", errReadOnly
+	return "", ReadOnlyWrite{imm}
 }
 
 func (imm Immediate16) Size() uint { return 2 }
-
 
 func (reg Register8) String() string {
 	return fmt.Sprintf("m.Reg8[%d]", int(reg))
@@ -95,13 +118,12 @@ func (reg Register8) String() string {
 
 func (reg Register8) Setter(value Place) (string, error) {
 	if value.Size() != reg.Size() {
-		return "", errSizeMismatch
+		return "", SizeMismatch{reg, value}
 	}
-	return fmt.Sprintf("m.Reg8[%d] = %v\n", int(reg), value), nil
+	return fmt.Sprintf("m.Reg8[%d] = %v", int(reg), value), nil
 }
 
 func (reg Register8) Size() uint { return 1 }
-
 
 func (reg Register16) String() string {
 	return fmt.Sprintf("m.Reg16[%d]", int(reg))
@@ -109,13 +131,12 @@ func (reg Register16) String() string {
 
 func (reg Register16) Setter(value Place) (string, error) {
 	if value.Size() != reg.Size() {
-		return "", errSizeMismatch
+		return "", SizeMismatch{reg, value}
 	}
-	return fmt.Sprintf("m.Reg16[%d] = %v\n", int(reg), value), nil
+	return fmt.Sprintf("m.Reg16[%d] = %v", int(reg), value), nil
 }
 
-func (reg Register16) Size() uint { return 16 }
-
+func (reg Register16) Size() uint { return 2 }
 
 // type IndirectReg Register16
 func (reg IndirectReg) String() string {
@@ -124,16 +145,15 @@ func (reg IndirectReg) String() string {
 
 func (reg IndirectReg) Setter(value Place) (string, error) {
 	if value.Size() != 1 {
-		return "", errSizeMismatch
+		return "", SizeMismatch{reg, value}
 	}
-	stmt := fmt.Sprintf("m.MemWrite(%s, %s)\n", Register16(reg), value)
+	stmt := fmt.Sprintf("m.MemWrite(%s, %s)", Register16(reg), value)
 	return stmt, nil
 }
 
 func (reg IndirectReg) Size() uint { return 1 }
 
-
-// type CompositeRegister struct{ lo, hi Register }
+// type CompositeReg struct{ lo, hi Register }
 func (reg CompositeReg) String() string {
 	return fmt.Sprintf("(uint16(%s) << 8 | uint16(%s))",
 		reg.hi, reg.lo)
@@ -141,7 +161,7 @@ func (reg CompositeReg) String() string {
 
 func (reg CompositeReg) Setter(value Place) (string, error) {
 	if value.Size() != 2 {
-		return "", errSizeMismatch
+		return "", SizeMismatch{reg, value}
 	}
 	setterHi, err := reg.hi.Setter(MkExpr(1, "uint8(val >> 8)"))
 	if err != nil {
@@ -153,32 +173,31 @@ func (reg CompositeReg) Setter(value Place) (string, error) {
 	}
 
 	const tmpl = `
-func(val uint16) {\n
+func(val uint16) {
 	%s
 	%s
-}(%s)\n`
+}(%s)
+`
 	stmt := fmt.Sprintf(tmpl, setterHi, setterLo, value)
 	return stmt, nil
 }
 
 func (reg CompositeReg) Size() uint { return 2 }
 
-
-// type IndirectComposite CompositeRegister
+// type IndirectComposite CompositeReg
 func (reg IndirectComposite) String() string {
 	return fmt.Sprintf("m.MemRead(%s)", CompositeReg(reg))
 }
 
 func (reg IndirectComposite) Setter(value Place) (string, error) {
-	if value.Size() != 2 {
-		return "", errSizeMismatch
+	if value.Size() != 1 {
+		return "", SizeMismatch{reg, value}
 	}
-	stmt := fmt.Sprintf("m.MemWrite(%s, %s)\n", CompositeReg(reg), value)
+	stmt := fmt.Sprintf("m.MemWrite(%s, %s)", CompositeReg(reg), value)
 	return stmt, nil
 }
 
-func (reg IndirectComposite) Size() uint { return 2 }
-
+func (reg IndirectComposite) Size() uint { return 1 }
 
 func (expr *Expr) String() string {
 	terms := make([]interface{}, len(expr.Terms))
@@ -189,11 +208,30 @@ func (expr *Expr) String() string {
 }
 
 func (expr *Expr) Setter(value Place) (string, error) {
-	return "", errReadOnly
+	return "", ReadOnlyWrite{expr}
 }
 
 func (expr *Expr) Size() uint { return expr.ValueSize }
 
+func (param StaticParam) String() string {
+	return fmt.Sprintf("%d", int(param))
+}
+
+func (param StaticParam) Setter(value Place) (string, error) {
+	return "", ReadOnlyWrite{param}
+}
+
+func (param StaticParam) Size() uint { return 0 }
+
+func (cond Condition) String() string {
+	return string(cond)
+}
+
+func (cond Condition) Setter(value Place) (string, error) {
+	return "", ReadOnlyWrite{cond}
+}
+
+func (cond Condition) Size() uint { return 0 }
 
 func compileInstrSLA(c *compiler.Compiler, operands ...Place) error {
 	// SLA E	- Shift E left preserving sign
@@ -222,10 +260,12 @@ func compileInstrSRA(c *compiler.Compiler, operands ...Place) error {
 	// SRA H	- Shift H right preserving sign
 	// SRA E	- Shift E right preserving sign
 	// SRA L	- Shift L right preserving sign
+	return nil
 }
 
 func compileInstrHALT(c *compiler.Compiler, operands ...Place) error {
 	// HALT 	- Halt processor
+	return nil
 }
 
 func compileInstrRL(c *compiler.Compiler, operands ...Place) error {
@@ -238,6 +278,7 @@ func compileInstrRL(c *compiler.Compiler, operands ...Place) error {
 	// RL D	- Rotate D left
 	// RL B	- Rotate B left
 	// RL H	- Rotate H left
+	return nil
 }
 
 func compileInstrLDI(c *compiler.Compiler, operands ...Place) error {
@@ -250,8 +291,8 @@ func compileInstrLDI(c *compiler.Compiler, operands ...Place) error {
 	}
 	c.PushInstr(instr)
 
-	incExpr := MkExpr(operands[0].Size(), "%s + 1", operands[0])
-	instr, err = operands[0].Setter(incExpr)
+	incExpr := MkExpr(HL.Size(), "%s + 1", HL)
+	instr, err = HL.Setter(incExpr)
 	if err != nil {
 		return err
 	}
@@ -262,6 +303,7 @@ func compileInstrLDI(c *compiler.Compiler, operands ...Place) error {
 
 func compileInstrSTOP(c *compiler.Compiler, operands ...Place) error {
 	// STOP 	- Stop processor
+	return nil
 }
 
 func compileInstrADD(c *compiler.Compiler, operands ...Place) error {
@@ -279,6 +321,7 @@ func compileInstrADD(c *compiler.Compiler, operands ...Place) error {
 	// ADD HL, HL	- Add 16-bit HL to HL
 	// ADD A, (HL)	- Add value pointed by HL to A
 	// ADD A, D	- Add D to A
+	return nil
 }
 
 func compileInstrRST(c *compiler.Compiler, operands ...Place) error {
@@ -290,6 +333,7 @@ func compileInstrRST(c *compiler.Compiler, operands ...Place) error {
 	// RST 20	- Call routine at address 0020h
 	// RST 38	- Call routine at address 0038h
 	// RST 0	- Call routine at address 0000h
+	return nil
 }
 
 func compileInstrSRL(c *compiler.Compiler, operands ...Place) error {
@@ -301,6 +345,7 @@ func compileInstrSRL(c *compiler.Compiler, operands ...Place) error {
 	// SRL C	- Shift C right
 	// SRL D	- Shift D right
 	// SRL L	- Shift L right
+	return nil
 }
 
 func compileInstrSUB(c *compiler.Compiler, operands ...Place) error {
@@ -313,6 +358,7 @@ func compileInstrSUB(c *compiler.Compiler, operands ...Place) error {
 	// SUB A, B	- Subtract B from A
 	// SUB A, L	- Subtract L from A
 	// SUB A, H	- Subtract H from A
+	return nil
 }
 
 func compileInstrLDHL(c *compiler.Compiler, operands ...Place) error {
@@ -334,10 +380,12 @@ func compileInstrJP(c *compiler.Compiler, operands ...Place) error {
 	// JP NC, nn	- Absolute jump to 16-bit location if last result caused no carry
 	// JP nn	- Absolute jump to 16-bit location
 	// JP (HL)	- Jump to 16-bit value pointed by HL
+	return nil
 }
 
 func compileInstrDI(c *compiler.Compiler, operands ...Place) error {
 	// DI 	- DIsable interrupts
+	return nil
 }
 
 func compileInstrINC(c *compiler.Compiler, operands ...Place) error {
@@ -353,6 +401,7 @@ func compileInstrINC(c *compiler.Compiler, operands ...Place) error {
 	// INC D	- Increment D
 	// INC HL	- Increment 16-bit HL
 	// INC A	- Increment A
+	return nil
 }
 
 func compileInstrCP(c *compiler.Compiler, operands ...Place) error {
@@ -365,6 +414,7 @@ func compileInstrCP(c *compiler.Compiler, operands ...Place) error {
 	// CP L	- Compare L against A
 	// CP n	- Compare 8-bit immediate against A
 	// CP D	- Compare D against A
+	return nil
 }
 
 func compileInstrRET(c *compiler.Compiler, operands ...Place) error {
@@ -373,6 +423,7 @@ func compileInstrRET(c *compiler.Compiler, operands ...Place) error {
 	// RET 	- Return to calling routine
 	// RET C	- Return if last result caused carry
 	// RET Z	- Return if last result was zero
+	return nil
 }
 
 func compileInstrRES(c *compiler.Compiler, operands ...Place) error {
@@ -440,18 +491,22 @@ func compileInstrRES(c *compiler.Compiler, operands ...Place) error {
 	// RES 4, A	- Clear (reset) bit 4 of A
 	// RES 0, H	- Clear (reset) bit 0 of H
 	// RES 6, H	- Clear (reset) bit 6 of H
+	return nil
 }
 
 func compileInstrCCF(c *compiler.Compiler, operands ...Place) error {
 	// CCF 	- Clear carry flag
+	return nil
 }
 
 func compileInstrRETI(c *compiler.Compiler, operands ...Place) error {
 	// RETI 	- Enable interrupts and return to calling routine
+	return nil
 }
 
 func compileInstrNOP(c *compiler.Compiler, operands ...Place) error {
 	// NOP 	- No Operation
+	return nil
 }
 
 func compileInstrBIT(c *compiler.Compiler, operands ...Place) error {
@@ -519,6 +574,7 @@ func compileInstrBIT(c *compiler.Compiler, operands ...Place) error {
 	// BIT 3, (HL)	- Test bit 3 of value pointed by HL
 	// BIT 2, A	- Test bit 2 of A
 	// BIT 7, L	- Test bit 7 of L
+	return nil
 }
 
 func compileInstrAND(c *compiler.Compiler, operands ...Place) error {
@@ -531,12 +587,14 @@ func compileInstrAND(c *compiler.Compiler, operands ...Place) error {
 	// AND A	- Logical AND A against A
 	// AND D	- Logical AND D against A
 	// AND (HL)	- Logical AND value pointed by HL against A
+	return nil
 }
 
 func compileInstrLDH(c *compiler.Compiler, operands ...Place) error {
 	// LDH (n), A	- Save A at address pointed to by (FF00h + 8-bit immediate)
 	// LDH A, (n)	- Load A from address pointed to by (FF00h + 8-bit immediate)
 	// LDH (C), A	- Save A at address pointed to by (FF00h + C)
+	return nil
 }
 
 func compileInstrLD(c *compiler.Compiler, operands ...Place) error {
@@ -623,10 +681,16 @@ func compileInstrLD(c *compiler.Compiler, operands ...Place) error {
 	// LD L, n	- Load 8-bit immediate into L
 	// LD BC, nn	- Load 16-bit immediate into BC
 	// LD H, B	- Copy B to H
+	stmt, err := operands[0].Setter(operands[1])
+	if err == nil {
+		c.PushInstr(stmt)
+	}
+	return err
 }
 
 func compileInstrSCF(c *compiler.Compiler, operands ...Place) error {
 	// SCF 	- Set carry flag
+	return nil
 }
 
 func compileInstrRLC(c *compiler.Compiler, operands ...Place) error {
@@ -639,6 +703,7 @@ func compileInstrRLC(c *compiler.Compiler, operands ...Place) error {
 	// RLC C	- Rotate C left with carry
 	// RLC D	- Rotate D left with carry
 	// RLC B	- Rotate B left with carry
+	return nil
 }
 
 func compileInstrSWAP(c *compiler.Compiler, operands ...Place) error {
@@ -650,10 +715,12 @@ func compileInstrSWAP(c *compiler.Compiler, operands ...Place) error {
 	// SWAP C	- Swap nybbles in C
 	// SWAP A	- Swap nybbles in A
 	// SWAP D	- Swap nybbles in D
+	return nil
 }
 
 func compileInstrCPL(c *compiler.Compiler, operands ...Place) error {
 	// CPL 	- Complement (logical NOT) on A
+	return nil
 }
 
 func compileInstrDEC(c *compiler.Compiler, operands ...Place) error {
@@ -669,6 +736,7 @@ func compileInstrDEC(c *compiler.Compiler, operands ...Place) error {
 	// DEC BC	- Decrement 16-bit BC
 	// DEC D	- Decrement D
 	// DEC H	- Decrement H
+	return nil
 }
 
 func compileInstrCALL(c *compiler.Compiler, operands ...Place) error {
@@ -677,6 +745,7 @@ func compileInstrCALL(c *compiler.Compiler, operands ...Place) error {
 	// CALL NZ, nn	- Call routine at 16-bit location if last result was not zero
 	// CALL nn	- Call routine at 16-bit location
 	// CALL NC, nn	- Call routine at 16-bit location if last result caused no carry
+	return nil
 }
 
 func compileInstrSBC(c *compiler.Compiler, operands ...Place) error {
@@ -689,10 +758,12 @@ func compileInstrSBC(c *compiler.Compiler, operands ...Place) error {
 	// SBC A, A	- Subtract A and carry flag from A
 	// SBC A, B	- Subtract B and carry flag from A
 	// SBC A, L	- Subtract and carry flag L from A
+	return nil
 }
 
 func compileInstrDAA(c *compiler.Compiler, operands ...Place) error {
 	// DAA 	- Adjust A for BCD addition
+	return nil
 }
 
 func compileInstrRRC(c *compiler.Compiler, operands ...Place) error {
@@ -705,6 +776,7 @@ func compileInstrRRC(c *compiler.Compiler, operands ...Place) error {
 	// RRC C	- Rotate C right with carry
 	// RRC D	- Rotate D right with carry
 	// RRC (HL)	- Rotate value pointed by HL right with carry
+	return nil
 }
 
 func compileInstrSET(c *compiler.Compiler, operands ...Place) error {
@@ -772,6 +844,7 @@ func compileInstrSET(c *compiler.Compiler, operands ...Place) error {
 	// SET 0, H	- Set bit 0 of H
 	// SET 2, A	- Set bit 2 of A
 	// SET 4, B	- Set bit 4 of B
+	return nil
 }
 
 func compileInstrJR(c *compiler.Compiler, operands ...Place) error {
@@ -780,6 +853,7 @@ func compileInstrJR(c *compiler.Compiler, operands ...Place) error {
 	// JR n	- Relative jump by signed immediate
 	// JR C, n	- Relative jump by signed immediate if last result caused carry
 	// JR NZ, n	- Relative jump by signed immediate if last result was not zero
+	return nil
 }
 
 func compileInstrRR(c *compiler.Compiler, operands ...Place) error {
@@ -792,11 +866,13 @@ func compileInstrRR(c *compiler.Compiler, operands ...Place) error {
 	// RR D	- Rotate D right
 	// RR H	- Rotate H right
 	// RR (HL)	- Rotate value pointed by HL right
+	return nil
 }
 
 func compileInstrLDD(c *compiler.Compiler, operands ...Place) error {
 	// LDD A, (HL)	- Load A from address pointed to by HL, and decrement HL
 	// LDD (HL), A	- Save A to address pointed by HL, and decrement HL
+	return nil
 }
 
 func compileInstrADC(c *compiler.Compiler, operands ...Place) error {
@@ -809,6 +885,7 @@ func compileInstrADC(c *compiler.Compiler, operands ...Place) error {
 	// ADC A, D	- Add D and carry flag to A
 	// ADC A, E	- Add E and carry flag to A
 	// ADC A, B	- Add B and carry flag to A
+	return nil
 }
 
 func compileInstrXOR(c *compiler.Compiler, operands ...Place) error {
@@ -821,6 +898,7 @@ func compileInstrXOR(c *compiler.Compiler, operands ...Place) error {
 	// XOR A	- Logical XOR A against A
 	// XOR D	- Logical XOR D against A
 	// XOR C	- Logical XOR C against A
+	return nil
 }
 
 func compileInstrPUSH(c *compiler.Compiler, operands ...Place) error {
@@ -828,6 +906,7 @@ func compileInstrPUSH(c *compiler.Compiler, operands ...Place) error {
 	// PUSH DE	- Push 16-bit DE onto stack
 	// PUSH HL	- Push 16-bit HL onto stack
 	// PUSH BC	- Push 16-bit BC onto stack
+	return nil
 }
 
 func compileInstrPOP(c *compiler.Compiler, operands ...Place) error {
@@ -835,10 +914,12 @@ func compileInstrPOP(c *compiler.Compiler, operands ...Place) error {
 	// POP DE	- Pop 16-bit value from stack into DE
 	// POP BC	- Pop 16-bit value from stack into BC
 	// POP HL	- Pop 16-bit value from stack into HL
+	return nil
 }
 
 func compileInstrEI(c *compiler.Compiler, operands ...Place) error {
 	// EI 	- Enable interrupts
+	return nil
 }
 
 func compileInstrXX(c *compiler.Compiler, operands ...Place) error {
@@ -854,6 +935,7 @@ func compileInstrXX(c *compiler.Compiler, operands ...Place) error {
 	// XX 	- Operation removed in this CPU
 	// XX 	- Operation removed in this CPU
 	// XX 	- Operation removed in this CPU
+	return nil
 }
 
 func compileInstrOR(c *compiler.Compiler, operands ...Place) error {
@@ -866,6 +948,7 @@ func compileInstrOR(c *compiler.Compiler, operands ...Place) error {
 	// OR H	- Logical OR H against A
 	// OR (HL)	- Logical OR value pointed by HL against A
 	// OR B	- Logical OR B against A
+	return nil
 }
 
 func (a Arch) compileExtCB(c *compiler.Compiler) error {
@@ -879,1042 +962,1050 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x00:
 		// RLC B
 		// Rotate B left with carry
-		compileInstrRLC(B)
+		return compileInstrRLC(c, B)
 	case 0x01:
 		// RLC C
 		// Rotate C left with carry
-		compileInstrRLC(C)
+		return compileInstrRLC(c, C)
 	case 0x02:
 		// RLC D
 		// Rotate D left with carry
-		compileInstrRLC(D)
+		return compileInstrRLC(c, D)
 	case 0x03:
 		// RLC E
 		// Rotate E left with carry
-		compileInstrRLC(E)
+		return compileInstrRLC(c, E)
 	case 0x04:
 		// RLC H
 		// Rotate H left with carry
-		compileInstrRLC(H)
+		return compileInstrRLC(c, H)
 	case 0x05:
 		// RLC L
 		// Rotate L left with carry
-		compileInstrRLC(L)
+		return compileInstrRLC(c, L)
 	case 0x06:
 		// RLC (HL)
 		// Rotate value pointed by HL left with carry
-		compileInstrRLC(IndirectRegister((HL)))
+		return compileInstrRLC(c, IndirectComposite(HL))
 	case 0x07:
 		// RLC A
 		// Rotate A left with carry
-		compileInstrRLC(A)
+		return compileInstrRLC(c, A)
 	case 0x08:
 		// RRC B
 		// Rotate B right with carry
-		compileInstrRRC(B)
+		return compileInstrRRC(c, B)
 	case 0x09:
 		// RRC C
 		// Rotate C right with carry
-		compileInstrRRC(C)
+		return compileInstrRRC(c, C)
 	case 0x0A:
 		// RRC D
 		// Rotate D right with carry
-		compileInstrRRC(D)
+		return compileInstrRRC(c, D)
 	case 0x0B:
 		// RRC E
 		// Rotate E right with carry
-		compileInstrRRC(E)
+		return compileInstrRRC(c, E)
 	case 0x0C:
 		// RRC H
 		// Rotate H right with carry
-		compileInstrRRC(H)
+		return compileInstrRRC(c, H)
 	case 0x0D:
 		// RRC L
 		// Rotate L right with carry
-		compileInstrRRC(L)
+		return compileInstrRRC(c, L)
 	case 0x0E:
 		// RRC (HL)
 		// Rotate value pointed by HL right with carry
-		compileInstrRRC(IndirectRegister((HL)))
+		return compileInstrRRC(c, IndirectComposite(HL))
 	case 0x0F:
 		// RRC A
 		// Rotate A right with carry
-		compileInstrRRC(A)
+		return compileInstrRRC(c, A)
 	case 0x10:
 		// RL B
 		// Rotate B left
-		compileInstrRL(B)
+		return compileInstrRL(c, B)
 	case 0x11:
 		// RL C
 		// Rotate C left
-		compileInstrRL(C)
+		return compileInstrRL(c, C)
 	case 0x12:
 		// RL D
 		// Rotate D left
-		compileInstrRL(D)
+		return compileInstrRL(c, D)
 	case 0x13:
 		// RL E
 		// Rotate E left
-		compileInstrRL(E)
+		return compileInstrRL(c, E)
 	case 0x14:
 		// RL H
 		// Rotate H left
-		compileInstrRL(H)
+		return compileInstrRL(c, H)
 	case 0x15:
 		// RL L
 		// Rotate L left
-		compileInstrRL(L)
+		return compileInstrRL(c, L)
 	case 0x16:
 		// RL (HL)
 		// Rotate value pointed by HL left
-		compileInstrRL(IndirectRegister((HL)))
+		return compileInstrRL(c, IndirectComposite(HL))
 	case 0x17:
 		// RL A
 		// Rotate A left
-		compileInstrRL(A)
+		return compileInstrRL(c, A)
 	case 0x18:
 		// RR B
 		// Rotate B right
-		compileInstrRR(B)
+		return compileInstrRR(c, B)
 	case 0x19:
 		// RR C
 		// Rotate C right
-		compileInstrRR(C)
+		return compileInstrRR(c, C)
 	case 0x1A:
 		// RR D
 		// Rotate D right
-		compileInstrRR(D)
+		return compileInstrRR(c, D)
 	case 0x1B:
 		// RR E
 		// Rotate E right
-		compileInstrRR(E)
+		return compileInstrRR(c, E)
 	case 0x1C:
 		// RR H
 		// Rotate H right
-		compileInstrRR(H)
+		return compileInstrRR(c, H)
 	case 0x1D:
 		// RR L
 		// Rotate L right
-		compileInstrRR(L)
+		return compileInstrRR(c, L)
 	case 0x1E:
 		// RR (HL)
 		// Rotate value pointed by HL right
-		compileInstrRR(IndirectRegister((HL)))
+		return compileInstrRR(c, IndirectComposite(HL))
 	case 0x1F:
 		// RR A
 		// Rotate A right
-		compileInstrRR(A)
+		return compileInstrRR(c, A)
 	case 0x20:
 		// SLA B
 		// Shift B left preserving sign
-		compileInstrSLA(B)
+		return compileInstrSLA(c, B)
 	case 0x21:
 		// SLA C
 		// Shift C left preserving sign
-		compileInstrSLA(C)
+		return compileInstrSLA(c, C)
 	case 0x22:
 		// SLA D
 		// Shift D left preserving sign
-		compileInstrSLA(D)
+		return compileInstrSLA(c, D)
 	case 0x23:
 		// SLA E
 		// Shift E left preserving sign
-		compileInstrSLA(E)
+		return compileInstrSLA(c, E)
 	case 0x24:
 		// SLA H
 		// Shift H left preserving sign
-		compileInstrSLA(H)
+		return compileInstrSLA(c, H)
 	case 0x25:
 		// SLA L
 		// Shift L left preserving sign
-		compileInstrSLA(L)
+		return compileInstrSLA(c, L)
 	case 0x26:
 		// SLA (HL)
 		// Shift value pointed by HL left preserving sign
-		compileInstrSLA(IndirectRegister((HL)))
+		return compileInstrSLA(c, IndirectComposite(HL))
 	case 0x27:
 		// SLA A
 		// Shift A left preserving sign
-		compileInstrSLA(A)
+		return compileInstrSLA(c, A)
 	case 0x28:
 		// SRA B
 		// Shift B right preserving sign
-		compileInstrSRA(B)
+		return compileInstrSRA(c, B)
 	case 0x29:
 		// SRA C
 		// Shift C right preserving sign
-		compileInstrSRA(C)
+		return compileInstrSRA(c, C)
 	case 0x2A:
 		// SRA D
 		// Shift D right preserving sign
-		compileInstrSRA(D)
+		return compileInstrSRA(c, D)
 	case 0x2B:
 		// SRA E
 		// Shift E right preserving sign
-		compileInstrSRA(E)
+		return compileInstrSRA(c, E)
 	case 0x2C:
 		// SRA H
 		// Shift H right preserving sign
-		compileInstrSRA(H)
+		return compileInstrSRA(c, H)
 	case 0x2D:
 		// SRA L
 		// Shift L right preserving sign
-		compileInstrSRA(L)
+		return compileInstrSRA(c, L)
 	case 0x2E:
 		// SRA (HL)
 		// Shift value pointed by HL right preserving sign
-		compileInstrSRA(IndirectRegister((HL)))
+		return compileInstrSRA(c, IndirectComposite(HL))
 	case 0x2F:
 		// SRA A
 		// Shift A right preserving sign
-		compileInstrSRA(A)
+		return compileInstrSRA(c, A)
 	case 0x30:
 		// SWAP B
 		// Swap nybbles in B
-		compileInstrSWAP(B)
+		return compileInstrSWAP(c, B)
 	case 0x31:
 		// SWAP C
 		// Swap nybbles in C
-		compileInstrSWAP(C)
+		return compileInstrSWAP(c, C)
 	case 0x32:
 		// SWAP D
 		// Swap nybbles in D
-		compileInstrSWAP(D)
+		return compileInstrSWAP(c, D)
 	case 0x33:
 		// SWAP E
 		// Swap nybbles in E
-		compileInstrSWAP(E)
+		return compileInstrSWAP(c, E)
 	case 0x34:
 		// SWAP H
 		// Swap nybbles in H
-		compileInstrSWAP(H)
+		return compileInstrSWAP(c, H)
 	case 0x35:
 		// SWAP L
 		// Swap nybbles in L
-		compileInstrSWAP(L)
+		return compileInstrSWAP(c, L)
 	case 0x36:
 		// SWAP (HL)
 		// Swap nybbles in value pointed by HL
-		compileInstrSWAP(IndirectRegister((HL)))
+		return compileInstrSWAP(c, IndirectComposite(HL))
 	case 0x37:
 		// SWAP A
 		// Swap nybbles in A
-		compileInstrSWAP(A)
+		return compileInstrSWAP(c, A)
 	case 0x38:
 		// SRL B
 		// Shift B right
-		compileInstrSRL(B)
+		return compileInstrSRL(c, B)
 	case 0x39:
 		// SRL C
 		// Shift C right
-		compileInstrSRL(C)
+		return compileInstrSRL(c, C)
 	case 0x3A:
 		// SRL D
 		// Shift D right
-		compileInstrSRL(D)
+		return compileInstrSRL(c, D)
 	case 0x3B:
 		// SRL E
 		// Shift E right
-		compileInstrSRL(E)
+		return compileInstrSRL(c, E)
 	case 0x3C:
 		// SRL H
 		// Shift H right
-		compileInstrSRL(H)
+		return compileInstrSRL(c, H)
 	case 0x3D:
 		// SRL L
 		// Shift L right
-		compileInstrSRL(L)
+		return compileInstrSRL(c, L)
 	case 0x3E:
 		// SRL (HL)
 		// Shift value pointed by HL right
-		compileInstrSRL(IndirectRegister((HL)))
+		return compileInstrSRL(c, IndirectComposite(HL))
 	case 0x3F:
 		// SRL A
 		// Shift A right
-		compileInstrSRL(A)
+		return compileInstrSRL(c, A)
 	case 0x40:
 		// BIT 0, B
 		// Test bit 0 of B
-		compileInstrBIT(StaticParam(0), B)
+		return compileInstrBIT(c, StaticParam(0), B)
 	case 0x41:
 		// BIT 0, C
 		// Test bit 0 of C
-		compileInstrBIT(StaticParam(0), C)
+		return compileInstrBIT(c, StaticParam(0), C)
 	case 0x42:
 		// BIT 0, D
 		// Test bit 0 of D
-		compileInstrBIT(StaticParam(0), D)
+		return compileInstrBIT(c, StaticParam(0), D)
 	case 0x43:
 		// BIT 0, E
 		// Test bit 0 of E
-		compileInstrBIT(StaticParam(0), E)
+		return compileInstrBIT(c, StaticParam(0), E)
 	case 0x44:
 		// BIT 0, H
 		// Test bit 0 of H
-		compileInstrBIT(StaticParam(0), H)
+		return compileInstrBIT(c, StaticParam(0), H)
 	case 0x45:
 		// BIT 0, L
 		// Test bit 0 of L
-		compileInstrBIT(StaticParam(0), L)
+		return compileInstrBIT(c, StaticParam(0), L)
 	case 0x46:
 		// BIT 0, (HL)
 		// Test bit 0 of value pointed by HL
-		compileInstrBIT(StaticParam(0), IndirectRegister((HL)))
+		return compileInstrBIT(c, StaticParam(0), IndirectComposite(HL))
 	case 0x47:
 		// BIT 0, A
 		// Test bit 0 of A
-		compileInstrBIT(StaticParam(0), A)
+		return compileInstrBIT(c, StaticParam(0), A)
 	case 0x48:
 		// BIT 1, B
 		// Test bit 1 of B
-		compileInstrBIT(StaticParam(1), B)
+		return compileInstrBIT(c, StaticParam(1), B)
 	case 0x49:
 		// BIT 1, C
 		// Test bit 1 of C
-		compileInstrBIT(StaticParam(1), C)
+		return compileInstrBIT(c, StaticParam(1), C)
 	case 0x4A:
 		// BIT 1, D
 		// Test bit 1 of D
-		compileInstrBIT(StaticParam(1), D)
+		return compileInstrBIT(c, StaticParam(1), D)
 	case 0x4B:
 		// BIT 1, E
 		// Test bit 1 of E
-		compileInstrBIT(StaticParam(1), E)
+		return compileInstrBIT(c, StaticParam(1), E)
 	case 0x4C:
 		// BIT 1, H
 		// Test bit 1 of H
-		compileInstrBIT(StaticParam(1), H)
+		return compileInstrBIT(c, StaticParam(1), H)
 	case 0x4D:
 		// BIT 1, L
 		// Test bit 1 of L
-		compileInstrBIT(StaticParam(1), L)
+		return compileInstrBIT(c, StaticParam(1), L)
 	case 0x4E:
 		// BIT 1, (HL)
 		// Test bit 1 of value pointed by HL
-		compileInstrBIT(StaticParam(1), IndirectRegister((HL)))
+		return compileInstrBIT(c, StaticParam(1), IndirectComposite(HL))
 	case 0x4F:
 		// BIT 1, A
 		// Test bit 1 of A
-		compileInstrBIT(StaticParam(1), A)
+		return compileInstrBIT(c, StaticParam(1), A)
 	case 0x50:
 		// BIT 2, B
 		// Test bit 2 of B
-		compileInstrBIT(StaticParam(2), B)
+		return compileInstrBIT(c, StaticParam(2), B)
 	case 0x51:
 		// BIT 2, C
 		// Test bit 2 of C
-		compileInstrBIT(StaticParam(2), C)
+		return compileInstrBIT(c, StaticParam(2), C)
 	case 0x52:
 		// BIT 2, D
 		// Test bit 2 of D
-		compileInstrBIT(StaticParam(2), D)
+		return compileInstrBIT(c, StaticParam(2), D)
 	case 0x53:
 		// BIT 2, E
 		// Test bit 2 of E
-		compileInstrBIT(StaticParam(2), E)
+		return compileInstrBIT(c, StaticParam(2), E)
 	case 0x54:
 		// BIT 2, H
 		// Test bit 2 of H
-		compileInstrBIT(StaticParam(2), H)
+		return compileInstrBIT(c, StaticParam(2), H)
 	case 0x55:
 		// BIT 2, L
 		// Test bit 2 of L
-		compileInstrBIT(StaticParam(2), L)
+		return compileInstrBIT(c, StaticParam(2), L)
 	case 0x56:
 		// BIT 2, (HL)
 		// Test bit 2 of value pointed by HL
-		compileInstrBIT(StaticParam(2), IndirectRegister((HL)))
+		return compileInstrBIT(c, StaticParam(2), IndirectComposite(HL))
 	case 0x57:
 		// BIT 2, A
 		// Test bit 2 of A
-		compileInstrBIT(StaticParam(2), A)
+		return compileInstrBIT(c, StaticParam(2), A)
 	case 0x58:
 		// BIT 3, B
 		// Test bit 3 of B
-		compileInstrBIT(StaticParam(3), B)
+		return compileInstrBIT(c, StaticParam(3), B)
 	case 0x59:
 		// BIT 3, C
 		// Test bit 3 of C
-		compileInstrBIT(StaticParam(3), C)
+		return compileInstrBIT(c, StaticParam(3), C)
 	case 0x5A:
 		// BIT 3, D
 		// Test bit 3 of D
-		compileInstrBIT(StaticParam(3), D)
+		return compileInstrBIT(c, StaticParam(3), D)
 	case 0x5B:
 		// BIT 3, E
 		// Test bit 3 of E
-		compileInstrBIT(StaticParam(3), E)
+		return compileInstrBIT(c, StaticParam(3), E)
 	case 0x5C:
 		// BIT 3, H
 		// Test bit 3 of H
-		compileInstrBIT(StaticParam(3), H)
+		return compileInstrBIT(c, StaticParam(3), H)
 	case 0x5D:
 		// BIT 3, L
 		// Test bit 3 of L
-		compileInstrBIT(StaticParam(3), L)
+		return compileInstrBIT(c, StaticParam(3), L)
 	case 0x5E:
 		// BIT 3, (HL)
 		// Test bit 3 of value pointed by HL
-		compileInstrBIT(StaticParam(3), IndirectRegister((HL)))
+		return compileInstrBIT(c, StaticParam(3), IndirectComposite(HL))
 	case 0x5F:
 		// BIT 3, A
 		// Test bit 3 of A
-		compileInstrBIT(StaticParam(3), A)
+		return compileInstrBIT(c, StaticParam(3), A)
 	case 0x60:
 		// BIT 4, B
 		// Test bit 4 of B
-		compileInstrBIT(StaticParam(4), B)
+		return compileInstrBIT(c, StaticParam(4), B)
 	case 0x61:
 		// BIT 4, C
 		// Test bit 4 of C
-		compileInstrBIT(StaticParam(4), C)
+		return compileInstrBIT(c, StaticParam(4), C)
 	case 0x62:
 		// BIT 4, D
 		// Test bit 4 of D
-		compileInstrBIT(StaticParam(4), D)
+		return compileInstrBIT(c, StaticParam(4), D)
 	case 0x63:
 		// BIT 4, E
 		// Test bit 4 of E
-		compileInstrBIT(StaticParam(4), E)
+		return compileInstrBIT(c, StaticParam(4), E)
 	case 0x64:
 		// BIT 4, H
 		// Test bit 4 of H
-		compileInstrBIT(StaticParam(4), H)
+		return compileInstrBIT(c, StaticParam(4), H)
 	case 0x65:
 		// BIT 4, L
 		// Test bit 4 of L
-		compileInstrBIT(StaticParam(4), L)
+		return compileInstrBIT(c, StaticParam(4), L)
 	case 0x66:
 		// BIT 4, (HL)
 		// Test bit 4 of value pointed by HL
-		compileInstrBIT(StaticParam(4), IndirectRegister((HL)))
+		return compileInstrBIT(c, StaticParam(4), IndirectComposite(HL))
 	case 0x67:
 		// BIT 4, A
 		// Test bit 4 of A
-		compileInstrBIT(StaticParam(4), A)
+		return compileInstrBIT(c, StaticParam(4), A)
 	case 0x68:
 		// BIT 5, B
 		// Test bit 5 of B
-		compileInstrBIT(StaticParam(5), B)
+		return compileInstrBIT(c, StaticParam(5), B)
 	case 0x69:
 		// BIT 5, C
 		// Test bit 5 of C
-		compileInstrBIT(StaticParam(5), C)
+		return compileInstrBIT(c, StaticParam(5), C)
 	case 0x6A:
 		// BIT 5, D
 		// Test bit 5 of D
-		compileInstrBIT(StaticParam(5), D)
+		return compileInstrBIT(c, StaticParam(5), D)
 	case 0x6B:
 		// BIT 5, E
 		// Test bit 5 of E
-		compileInstrBIT(StaticParam(5), E)
+		return compileInstrBIT(c, StaticParam(5), E)
 	case 0x6C:
 		// BIT 5, H
 		// Test bit 5 of H
-		compileInstrBIT(StaticParam(5), H)
+		return compileInstrBIT(c, StaticParam(5), H)
 	case 0x6D:
 		// BIT 5, L
 		// Test bit 5 of L
-		compileInstrBIT(StaticParam(5), L)
+		return compileInstrBIT(c, StaticParam(5), L)
 	case 0x6E:
 		// BIT 5, (HL)
 		// Test bit 5 of value pointed by HL
-		compileInstrBIT(StaticParam(5), IndirectRegister((HL)))
+		return compileInstrBIT(c, StaticParam(5), IndirectComposite(HL))
 	case 0x6F:
 		// BIT 5, A
 		// Test bit 5 of A
-		compileInstrBIT(StaticParam(5), A)
+		return compileInstrBIT(c, StaticParam(5), A)
 	case 0x70:
 		// BIT 6, B
 		// Test bit 6 of B
-		compileInstrBIT(StaticParam(6), B)
+		return compileInstrBIT(c, StaticParam(6), B)
 	case 0x71:
 		// BIT 6, C
 		// Test bit 6 of C
-		compileInstrBIT(StaticParam(6), C)
+		return compileInstrBIT(c, StaticParam(6), C)
 	case 0x72:
 		// BIT 6, D
 		// Test bit 6 of D
-		compileInstrBIT(StaticParam(6), D)
+		return compileInstrBIT(c, StaticParam(6), D)
 	case 0x73:
 		// BIT 6, E
 		// Test bit 6 of E
-		compileInstrBIT(StaticParam(6), E)
+		return compileInstrBIT(c, StaticParam(6), E)
 	case 0x74:
 		// BIT 6, H
 		// Test bit 6 of H
-		compileInstrBIT(StaticParam(6), H)
+		return compileInstrBIT(c, StaticParam(6), H)
 	case 0x75:
 		// BIT 6, L
 		// Test bit 6 of L
-		compileInstrBIT(StaticParam(6), L)
+		return compileInstrBIT(c, StaticParam(6), L)
 	case 0x76:
 		// BIT 6, (HL)
 		// Test bit 6 of value pointed by HL
-		compileInstrBIT(StaticParam(6), IndirectRegister((HL)))
+		return compileInstrBIT(c, StaticParam(6), IndirectComposite(HL))
 	case 0x77:
 		// BIT 6, A
 		// Test bit 6 of A
-		compileInstrBIT(StaticParam(6), A)
+		return compileInstrBIT(c, StaticParam(6), A)
 	case 0x78:
 		// BIT 7, B
 		// Test bit 7 of B
-		compileInstrBIT(StaticParam(7), B)
+		return compileInstrBIT(c, StaticParam(7), B)
 	case 0x79:
 		// BIT 7, C
 		// Test bit 7 of C
-		compileInstrBIT(StaticParam(7), C)
+		return compileInstrBIT(c, StaticParam(7), C)
 	case 0x7A:
 		// BIT 7, D
 		// Test bit 7 of D
-		compileInstrBIT(StaticParam(7), D)
+		return compileInstrBIT(c, StaticParam(7), D)
 	case 0x7B:
 		// BIT 7, E
 		// Test bit 7 of E
-		compileInstrBIT(StaticParam(7), E)
+		return compileInstrBIT(c, StaticParam(7), E)
 	case 0x7C:
 		// BIT 7, H
 		// Test bit 7 of H
-		compileInstrBIT(StaticParam(7), H)
+		return compileInstrBIT(c, StaticParam(7), H)
 	case 0x7D:
 		// BIT 7, L
 		// Test bit 7 of L
-		compileInstrBIT(StaticParam(7), L)
+		return compileInstrBIT(c, StaticParam(7), L)
 	case 0x7E:
 		// BIT 7, (HL)
 		// Test bit 7 of value pointed by HL
-		compileInstrBIT(StaticParam(7), IndirectRegister((HL)))
+		return compileInstrBIT(c, StaticParam(7), IndirectComposite(HL))
 	case 0x7F:
 		// BIT 7, A
 		// Test bit 7 of A
-		compileInstrBIT(StaticParam(7), A)
+		return compileInstrBIT(c, StaticParam(7), A)
 	case 0x80:
 		// RES 0, B
 		// Clear (reset) bit 0 of B
-		compileInstrRES(StaticParam(0), B)
+		return compileInstrRES(c, StaticParam(0), B)
 	case 0x81:
 		// RES 0, C
 		// Clear (reset) bit 0 of C
-		compileInstrRES(StaticParam(0), C)
+		return compileInstrRES(c, StaticParam(0), C)
 	case 0x82:
 		// RES 0, D
 		// Clear (reset) bit 0 of D
-		compileInstrRES(StaticParam(0), D)
+		return compileInstrRES(c, StaticParam(0), D)
 	case 0x83:
 		// RES 0, E
 		// Clear (reset) bit 0 of E
-		compileInstrRES(StaticParam(0), E)
+		return compileInstrRES(c, StaticParam(0), E)
 	case 0x84:
 		// RES 0, H
 		// Clear (reset) bit 0 of H
-		compileInstrRES(StaticParam(0), H)
+		return compileInstrRES(c, StaticParam(0), H)
 	case 0x85:
 		// RES 0, L
 		// Clear (reset) bit 0 of L
-		compileInstrRES(StaticParam(0), L)
+		return compileInstrRES(c, StaticParam(0), L)
 	case 0x86:
 		// RES 0, (HL)
 		// Clear (reset) bit 0 of value pointed by HL
-		compileInstrRES(StaticParam(0), IndirectRegister((HL)))
+		return compileInstrRES(c, StaticParam(0), IndirectComposite(HL))
 	case 0x87:
 		// RES 0, A
 		// Clear (reset) bit 0 of A
-		compileInstrRES(StaticParam(0), A)
+		return compileInstrRES(c, StaticParam(0), A)
 	case 0x88:
 		// RES 1, B
 		// Clear (reset) bit 1 of B
-		compileInstrRES(StaticParam(1), B)
+		return compileInstrRES(c, StaticParam(1), B)
 	case 0x89:
 		// RES 1, C
 		// Clear (reset) bit 1 of C
-		compileInstrRES(StaticParam(1), C)
+		return compileInstrRES(c, StaticParam(1), C)
 	case 0x8A:
 		// RES 1, D
 		// Clear (reset) bit 1 of D
-		compileInstrRES(StaticParam(1), D)
+		return compileInstrRES(c, StaticParam(1), D)
 	case 0x8B:
 		// RES 1, E
 		// Clear (reset) bit 1 of E
-		compileInstrRES(StaticParam(1), E)
+		return compileInstrRES(c, StaticParam(1), E)
 	case 0x8C:
 		// RES 1, H
 		// Clear (reset) bit 1 of H
-		compileInstrRES(StaticParam(1), H)
+		return compileInstrRES(c, StaticParam(1), H)
 	case 0x8D:
 		// RES 1, L
 		// Clear (reset) bit 1 of L
-		compileInstrRES(StaticParam(1), L)
+		return compileInstrRES(c, StaticParam(1), L)
 	case 0x8E:
 		// RES 1, (HL)
 		// Clear (reset) bit 1 of value pointed by HL
-		compileInstrRES(StaticParam(1), IndirectRegister((HL)))
+		return compileInstrRES(c, StaticParam(1), IndirectComposite(HL))
 	case 0x8F:
 		// RES 1, A
 		// Clear (reset) bit 1 of A
-		compileInstrRES(StaticParam(1), A)
+		return compileInstrRES(c, StaticParam(1), A)
 	case 0x90:
 		// RES 2, B
 		// Clear (reset) bit 2 of B
-		compileInstrRES(StaticParam(2), B)
+		return compileInstrRES(c, StaticParam(2), B)
 	case 0x91:
 		// RES 2, C
 		// Clear (reset) bit 2 of C
-		compileInstrRES(StaticParam(2), C)
+		return compileInstrRES(c, StaticParam(2), C)
 	case 0x92:
 		// RES 2, D
 		// Clear (reset) bit 2 of D
-		compileInstrRES(StaticParam(2), D)
+		return compileInstrRES(c, StaticParam(2), D)
 	case 0x93:
 		// RES 2, E
 		// Clear (reset) bit 2 of E
-		compileInstrRES(StaticParam(2), E)
+		return compileInstrRES(c, StaticParam(2), E)
 	case 0x94:
 		// RES 2, H
 		// Clear (reset) bit 2 of H
-		compileInstrRES(StaticParam(2), H)
+		return compileInstrRES(c, StaticParam(2), H)
 	case 0x95:
 		// RES 2, L
 		// Clear (reset) bit 2 of L
-		compileInstrRES(StaticParam(2), L)
+		return compileInstrRES(c, StaticParam(2), L)
 	case 0x96:
 		// RES 2, (HL)
 		// Clear (reset) bit 2 of value pointed by HL
-		compileInstrRES(StaticParam(2), IndirectRegister((HL)))
+		return compileInstrRES(c, StaticParam(2), IndirectComposite(HL))
 	case 0x97:
 		// RES 2, A
 		// Clear (reset) bit 2 of A
-		compileInstrRES(StaticParam(2), A)
+		return compileInstrRES(c, StaticParam(2), A)
 	case 0x98:
 		// RES 3, B
 		// Clear (reset) bit 3 of B
-		compileInstrRES(StaticParam(3), B)
+		return compileInstrRES(c, StaticParam(3), B)
 	case 0x99:
 		// RES 3, C
 		// Clear (reset) bit 3 of C
-		compileInstrRES(StaticParam(3), C)
+		return compileInstrRES(c, StaticParam(3), C)
 	case 0x9A:
 		// RES 3, D
 		// Clear (reset) bit 3 of D
-		compileInstrRES(StaticParam(3), D)
+		return compileInstrRES(c, StaticParam(3), D)
 	case 0x9B:
 		// RES 3, E
 		// Clear (reset) bit 3 of E
-		compileInstrRES(StaticParam(3), E)
+		return compileInstrRES(c, StaticParam(3), E)
 	case 0x9C:
 		// RES 3, H
 		// Clear (reset) bit 3 of H
-		compileInstrRES(StaticParam(3), H)
+		return compileInstrRES(c, StaticParam(3), H)
 	case 0x9D:
 		// RES 3, L
 		// Clear (reset) bit 3 of L
-		compileInstrRES(StaticParam(3), L)
+		return compileInstrRES(c, StaticParam(3), L)
 	case 0x9E:
 		// RES 3, (HL)
 		// Clear (reset) bit 3 of value pointed by HL
-		compileInstrRES(StaticParam(3), IndirectRegister((HL)))
+		return compileInstrRES(c, StaticParam(3), IndirectComposite(HL))
 	case 0x9F:
 		// RES 3, A
 		// Clear (reset) bit 3 of A
-		compileInstrRES(StaticParam(3), A)
+		return compileInstrRES(c, StaticParam(3), A)
 	case 0xA0:
 		// RES 4, B
 		// Clear (reset) bit 4 of B
-		compileInstrRES(StaticParam(4), B)
+		return compileInstrRES(c, StaticParam(4), B)
 	case 0xA1:
 		// RES 4, C
 		// Clear (reset) bit 4 of C
-		compileInstrRES(StaticParam(4), C)
+		return compileInstrRES(c, StaticParam(4), C)
 	case 0xA2:
 		// RES 4, D
 		// Clear (reset) bit 4 of D
-		compileInstrRES(StaticParam(4), D)
+		return compileInstrRES(c, StaticParam(4), D)
 	case 0xA3:
 		// RES 4, E
 		// Clear (reset) bit 4 of E
-		compileInstrRES(StaticParam(4), E)
+		return compileInstrRES(c, StaticParam(4), E)
 	case 0xA4:
 		// RES 4, H
 		// Clear (reset) bit 4 of H
-		compileInstrRES(StaticParam(4), H)
+		return compileInstrRES(c, StaticParam(4), H)
 	case 0xA5:
 		// RES 4, L
 		// Clear (reset) bit 4 of L
-		compileInstrRES(StaticParam(4), L)
+		return compileInstrRES(c, StaticParam(4), L)
 	case 0xA6:
 		// RES 4, (HL)
 		// Clear (reset) bit 4 of value pointed by HL
-		compileInstrRES(StaticParam(4), IndirectRegister((HL)))
+		return compileInstrRES(c, StaticParam(4), IndirectComposite(HL))
 	case 0xA7:
 		// RES 4, A
 		// Clear (reset) bit 4 of A
-		compileInstrRES(StaticParam(4), A)
+		return compileInstrRES(c, StaticParam(4), A)
 	case 0xA8:
 		// RES 5, B
 		// Clear (reset) bit 5 of B
-		compileInstrRES(StaticParam(5), B)
+		return compileInstrRES(c, StaticParam(5), B)
 	case 0xA9:
 		// RES 5, C
 		// Clear (reset) bit 5 of C
-		compileInstrRES(StaticParam(5), C)
+		return compileInstrRES(c, StaticParam(5), C)
 	case 0xAA:
 		// RES 5, D
 		// Clear (reset) bit 5 of D
-		compileInstrRES(StaticParam(5), D)
+		return compileInstrRES(c, StaticParam(5), D)
 	case 0xAB:
 		// RES 5, E
 		// Clear (reset) bit 5 of E
-		compileInstrRES(StaticParam(5), E)
+		return compileInstrRES(c, StaticParam(5), E)
 	case 0xAC:
 		// RES 5, H
 		// Clear (reset) bit 5 of H
-		compileInstrRES(StaticParam(5), H)
+		return compileInstrRES(c, StaticParam(5), H)
 	case 0xAD:
 		// RES 5, L
 		// Clear (reset) bit 5 of L
-		compileInstrRES(StaticParam(5), L)
+		return compileInstrRES(c, StaticParam(5), L)
 	case 0xAE:
 		// RES 5, (HL)
 		// Clear (reset) bit 5 of value pointed by HL
-		compileInstrRES(StaticParam(5), IndirectRegister((HL)))
+		return compileInstrRES(c, StaticParam(5), IndirectComposite(HL))
 	case 0xAF:
 		// RES 5, A
 		// Clear (reset) bit 5 of A
-		compileInstrRES(StaticParam(5), A)
+		return compileInstrRES(c, StaticParam(5), A)
 	case 0xB0:
 		// RES 6, B
 		// Clear (reset) bit 6 of B
-		compileInstrRES(StaticParam(6), B)
+		return compileInstrRES(c, StaticParam(6), B)
 	case 0xB1:
 		// RES 6, C
 		// Clear (reset) bit 6 of C
-		compileInstrRES(StaticParam(6), C)
+		return compileInstrRES(c, StaticParam(6), C)
 	case 0xB2:
 		// RES 6, D
 		// Clear (reset) bit 6 of D
-		compileInstrRES(StaticParam(6), D)
+		return compileInstrRES(c, StaticParam(6), D)
 	case 0xB3:
 		// RES 6, E
 		// Clear (reset) bit 6 of E
-		compileInstrRES(StaticParam(6), E)
+		return compileInstrRES(c, StaticParam(6), E)
 	case 0xB4:
 		// RES 6, H
 		// Clear (reset) bit 6 of H
-		compileInstrRES(StaticParam(6), H)
+		return compileInstrRES(c, StaticParam(6), H)
 	case 0xB5:
 		// RES 6, L
 		// Clear (reset) bit 6 of L
-		compileInstrRES(StaticParam(6), L)
+		return compileInstrRES(c, StaticParam(6), L)
 	case 0xB6:
 		// RES 6, (HL)
 		// Clear (reset) bit 6 of value pointed by HL
-		compileInstrRES(StaticParam(6), IndirectRegister((HL)))
+		return compileInstrRES(c, StaticParam(6), IndirectComposite(HL))
 	case 0xB7:
 		// RES 6, A
 		// Clear (reset) bit 6 of A
-		compileInstrRES(StaticParam(6), A)
+		return compileInstrRES(c, StaticParam(6), A)
 	case 0xB8:
 		// RES 7, B
 		// Clear (reset) bit 7 of B
-		compileInstrRES(StaticParam(7), B)
+		return compileInstrRES(c, StaticParam(7), B)
 	case 0xB9:
 		// RES 7, C
 		// Clear (reset) bit 7 of C
-		compileInstrRES(StaticParam(7), C)
+		return compileInstrRES(c, StaticParam(7), C)
 	case 0xBA:
 		// RES 7, D
 		// Clear (reset) bit 7 of D
-		compileInstrRES(StaticParam(7), D)
+		return compileInstrRES(c, StaticParam(7), D)
 	case 0xBB:
 		// RES 7, E
 		// Clear (reset) bit 7 of E
-		compileInstrRES(StaticParam(7), E)
+		return compileInstrRES(c, StaticParam(7), E)
 	case 0xBC:
 		// RES 7, H
 		// Clear (reset) bit 7 of H
-		compileInstrRES(StaticParam(7), H)
+		return compileInstrRES(c, StaticParam(7), H)
 	case 0xBD:
 		// RES 7, L
 		// Clear (reset) bit 7 of L
-		compileInstrRES(StaticParam(7), L)
+		return compileInstrRES(c, StaticParam(7), L)
 	case 0xBE:
 		// RES 7, (HL)
 		// Clear (reset) bit 7 of value pointed by HL
-		compileInstrRES(StaticParam(7), IndirectRegister((HL)))
+		return compileInstrRES(c, StaticParam(7), IndirectComposite(HL))
 	case 0xBF:
 		// RES 7, A
 		// Clear (reset) bit 7 of A
-		compileInstrRES(StaticParam(7), A)
+		return compileInstrRES(c, StaticParam(7), A)
 	case 0xC0:
 		// SET 0, B
 		// Set bit 0 of B
-		compileInstrSET(StaticParam(0), B)
+		return compileInstrSET(c, StaticParam(0), B)
 	case 0xC1:
 		// SET 0, C
 		// Set bit 0 of C
-		compileInstrSET(StaticParam(0), C)
+		return compileInstrSET(c, StaticParam(0), C)
 	case 0xC2:
 		// SET 0, D
 		// Set bit 0 of D
-		compileInstrSET(StaticParam(0), D)
+		return compileInstrSET(c, StaticParam(0), D)
 	case 0xC3:
 		// SET 0, E
 		// Set bit 0 of E
-		compileInstrSET(StaticParam(0), E)
+		return compileInstrSET(c, StaticParam(0), E)
 	case 0xC4:
 		// SET 0, H
 		// Set bit 0 of H
-		compileInstrSET(StaticParam(0), H)
+		return compileInstrSET(c, StaticParam(0), H)
 	case 0xC5:
 		// SET 0, L
 		// Set bit 0 of L
-		compileInstrSET(StaticParam(0), L)
+		return compileInstrSET(c, StaticParam(0), L)
 	case 0xC6:
 		// SET 0, (HL)
 		// Set bit 0 of value pointed by HL
-		compileInstrSET(StaticParam(0), IndirectRegister((HL)))
+		return compileInstrSET(c, StaticParam(0), IndirectComposite(HL))
 	case 0xC7:
 		// SET 0, A
 		// Set bit 0 of A
-		compileInstrSET(StaticParam(0), A)
+		return compileInstrSET(c, StaticParam(0), A)
 	case 0xC8:
 		// SET 1, B
 		// Set bit 1 of B
-		compileInstrSET(StaticParam(1), B)
+		return compileInstrSET(c, StaticParam(1), B)
 	case 0xC9:
 		// SET 1, C
 		// Set bit 1 of C
-		compileInstrSET(StaticParam(1), C)
+		return compileInstrSET(c, StaticParam(1), C)
 	case 0xCA:
 		// SET 1, D
 		// Set bit 1 of D
-		compileInstrSET(StaticParam(1), D)
+		return compileInstrSET(c, StaticParam(1), D)
 	case 0xCB:
 		// SET 1, E
 		// Set bit 1 of E
-		compileInstrSET(StaticParam(1), E)
+		return compileInstrSET(c, StaticParam(1), E)
 	case 0xCC:
 		// SET 1, H
 		// Set bit 1 of H
-		compileInstrSET(StaticParam(1), H)
+		return compileInstrSET(c, StaticParam(1), H)
 	case 0xCD:
 		// SET 1, L
 		// Set bit 1 of L
-		compileInstrSET(StaticParam(1), L)
+		return compileInstrSET(c, StaticParam(1), L)
 	case 0xCE:
 		// SET 1, (HL)
 		// Set bit 1 of value pointed by HL
-		compileInstrSET(StaticParam(1), IndirectRegister((HL)))
+		return compileInstrSET(c, StaticParam(1), IndirectComposite(HL))
 	case 0xCF:
 		// SET 1, A
 		// Set bit 1 of A
-		compileInstrSET(StaticParam(1), A)
+		return compileInstrSET(c, StaticParam(1), A)
 	case 0xD0:
 		// SET 2, B
 		// Set bit 2 of B
-		compileInstrSET(StaticParam(2), B)
+		return compileInstrSET(c, StaticParam(2), B)
 	case 0xD1:
 		// SET 2, C
 		// Set bit 2 of C
-		compileInstrSET(StaticParam(2), C)
+		return compileInstrSET(c, StaticParam(2), C)
 	case 0xD2:
 		// SET 2, D
 		// Set bit 2 of D
-		compileInstrSET(StaticParam(2), D)
+		return compileInstrSET(c, StaticParam(2), D)
 	case 0xD3:
 		// SET 2, E
 		// Set bit 2 of E
-		compileInstrSET(StaticParam(2), E)
+		return compileInstrSET(c, StaticParam(2), E)
 	case 0xD4:
 		// SET 2, H
 		// Set bit 2 of H
-		compileInstrSET(StaticParam(2), H)
+		return compileInstrSET(c, StaticParam(2), H)
 	case 0xD5:
 		// SET 2, L
 		// Set bit 2 of L
-		compileInstrSET(StaticParam(2), L)
+		return compileInstrSET(c, StaticParam(2), L)
 	case 0xD6:
 		// SET 2, (HL)
 		// Set bit 2 of value pointed by HL
-		compileInstrSET(StaticParam(2), IndirectRegister((HL)))
+		return compileInstrSET(c, StaticParam(2), IndirectComposite(HL))
 	case 0xD7:
 		// SET 2, A
 		// Set bit 2 of A
-		compileInstrSET(StaticParam(2), A)
+		return compileInstrSET(c, StaticParam(2), A)
 	case 0xD8:
 		// SET 3, B
 		// Set bit 3 of B
-		compileInstrSET(StaticParam(3), B)
+		return compileInstrSET(c, StaticParam(3), B)
 	case 0xD9:
 		// SET 3, C
 		// Set bit 3 of C
-		compileInstrSET(StaticParam(3), C)
+		return compileInstrSET(c, StaticParam(3), C)
 	case 0xDA:
 		// SET 3, D
 		// Set bit 3 of D
-		compileInstrSET(StaticParam(3), D)
+		return compileInstrSET(c, StaticParam(3), D)
 	case 0xDB:
 		// SET 3, E
 		// Set bit 3 of E
-		compileInstrSET(StaticParam(3), E)
+		return compileInstrSET(c, StaticParam(3), E)
 	case 0xDC:
 		// SET 3, H
 		// Set bit 3 of H
-		compileInstrSET(StaticParam(3), H)
+		return compileInstrSET(c, StaticParam(3), H)
 	case 0xDD:
 		// SET 3, L
 		// Set bit 3 of L
-		compileInstrSET(StaticParam(3), L)
+		return compileInstrSET(c, StaticParam(3), L)
 	case 0xDE:
 		// SET 3, (HL)
 		// Set bit 3 of value pointed by HL
-		compileInstrSET(StaticParam(3), IndirectRegister((HL)))
+		return compileInstrSET(c, StaticParam(3), IndirectComposite(HL))
 	case 0xDF:
 		// SET 3, A
 		// Set bit 3 of A
-		compileInstrSET(StaticParam(3), A)
+		return compileInstrSET(c, StaticParam(3), A)
 	case 0xE0:
 		// SET 4, B
 		// Set bit 4 of B
-		compileInstrSET(StaticParam(4), B)
+		return compileInstrSET(c, StaticParam(4), B)
 	case 0xE1:
 		// SET 4, C
 		// Set bit 4 of C
-		compileInstrSET(StaticParam(4), C)
+		return compileInstrSET(c, StaticParam(4), C)
 	case 0xE2:
 		// SET 4, D
 		// Set bit 4 of D
-		compileInstrSET(StaticParam(4), D)
+		return compileInstrSET(c, StaticParam(4), D)
 	case 0xE3:
 		// SET 4, E
 		// Set bit 4 of E
-		compileInstrSET(StaticParam(4), E)
+		return compileInstrSET(c, StaticParam(4), E)
 	case 0xE4:
 		// SET 4, H
 		// Set bit 4 of H
-		compileInstrSET(StaticParam(4), H)
+		return compileInstrSET(c, StaticParam(4), H)
 	case 0xE5:
 		// SET 4, L
 		// Set bit 4 of L
-		compileInstrSET(StaticParam(4), L)
+		return compileInstrSET(c, StaticParam(4), L)
 	case 0xE6:
 		// SET 4, (HL)
 		// Set bit 4 of value pointed by HL
-		compileInstrSET(StaticParam(4), IndirectRegister((HL)))
+		return compileInstrSET(c, StaticParam(4), IndirectComposite(HL))
 	case 0xE7:
 		// SET 4, A
 		// Set bit 4 of A
-		compileInstrSET(StaticParam(4), A)
+		return compileInstrSET(c, StaticParam(4), A)
 	case 0xE8:
 		// SET 5, B
 		// Set bit 5 of B
-		compileInstrSET(StaticParam(5), B)
+		return compileInstrSET(c, StaticParam(5), B)
 	case 0xE9:
 		// SET 5, C
 		// Set bit 5 of C
-		compileInstrSET(StaticParam(5), C)
+		return compileInstrSET(c, StaticParam(5), C)
 	case 0xEA:
 		// SET 5, D
 		// Set bit 5 of D
-		compileInstrSET(StaticParam(5), D)
+		return compileInstrSET(c, StaticParam(5), D)
 	case 0xEB:
 		// SET 5, E
 		// Set bit 5 of E
-		compileInstrSET(StaticParam(5), E)
+		return compileInstrSET(c, StaticParam(5), E)
 	case 0xEC:
 		// SET 5, H
 		// Set bit 5 of H
-		compileInstrSET(StaticParam(5), H)
+		return compileInstrSET(c, StaticParam(5), H)
 	case 0xED:
 		// SET 5, L
 		// Set bit 5 of L
-		compileInstrSET(StaticParam(5), L)
+		return compileInstrSET(c, StaticParam(5), L)
 	case 0xEE:
 		// SET 5, (HL)
 		// Set bit 5 of value pointed by HL
-		compileInstrSET(StaticParam(5), IndirectRegister((HL)))
+		return compileInstrSET(c, StaticParam(5), IndirectComposite(HL))
 	case 0xEF:
 		// SET 5, A
 		// Set bit 5 of A
-		compileInstrSET(StaticParam(5), A)
+		return compileInstrSET(c, StaticParam(5), A)
 	case 0xF0:
 		// SET 6, B
 		// Set bit 6 of B
-		compileInstrSET(StaticParam(6), B)
+		return compileInstrSET(c, StaticParam(6), B)
 	case 0xF1:
 		// SET 6, C
 		// Set bit 6 of C
-		compileInstrSET(StaticParam(6), C)
+		return compileInstrSET(c, StaticParam(6), C)
 	case 0xF2:
 		// SET 6, D
 		// Set bit 6 of D
-		compileInstrSET(StaticParam(6), D)
+		return compileInstrSET(c, StaticParam(6), D)
 	case 0xF3:
 		// SET 6, E
 		// Set bit 6 of E
-		compileInstrSET(StaticParam(6), E)
+		return compileInstrSET(c, StaticParam(6), E)
 	case 0xF4:
 		// SET 6, H
 		// Set bit 6 of H
-		compileInstrSET(StaticParam(6), H)
+		return compileInstrSET(c, StaticParam(6), H)
 	case 0xF5:
 		// SET 6, L
 		// Set bit 6 of L
-		compileInstrSET(StaticParam(6), L)
+		return compileInstrSET(c, StaticParam(6), L)
 	case 0xF6:
 		// SET 6, (HL)
 		// Set bit 6 of value pointed by HL
-		compileInstrSET(StaticParam(6), IndirectRegister((HL)))
+		return compileInstrSET(c, StaticParam(6), IndirectComposite(HL))
 	case 0xF7:
 		// SET 6, A
 		// Set bit 6 of A
-		compileInstrSET(StaticParam(6), A)
+		return compileInstrSET(c, StaticParam(6), A)
 	case 0xF8:
 		// SET 7, B
 		// Set bit 7 of B
-		compileInstrSET(StaticParam(7), B)
+		return compileInstrSET(c, StaticParam(7), B)
 	case 0xF9:
 		// SET 7, C
 		// Set bit 7 of C
-		compileInstrSET(StaticParam(7), C)
+		return compileInstrSET(c, StaticParam(7), C)
 	case 0xFA:
 		// SET 7, D
 		// Set bit 7 of D
-		compileInstrSET(StaticParam(7), D)
+		return compileInstrSET(c, StaticParam(7), D)
 	case 0xFB:
 		// SET 7, E
 		// Set bit 7 of E
-		compileInstrSET(StaticParam(7), E)
+		return compileInstrSET(c, StaticParam(7), E)
 	case 0xFC:
 		// SET 7, H
 		// Set bit 7 of H
-		compileInstrSET(StaticParam(7), H)
+		return compileInstrSET(c, StaticParam(7), H)
 	case 0xFD:
 		// SET 7, L
 		// Set bit 7 of L
-		compileInstrSET(StaticParam(7), L)
+		return compileInstrSET(c, StaticParam(7), L)
 	case 0xFE:
 		// SET 7, (HL)
 		// Set bit 7 of value pointed by HL
-		compileInstrSET(StaticParam(7), IndirectRegister((HL)))
+		return compileInstrSET(c, StaticParam(7), IndirectComposite(HL))
 	case 0xFF:
 		// SET 7, A
 		// Set bit 7 of A
-		compileInstrSET(StaticParam(7), A)
+		return compileInstrSET(c, StaticParam(7), A)
 	}
+
+	panic("undefined opcode")
 }
 
-func (a Arch) compileExtDirect(c *compiler.Compiler) error {
+func (a Arch) CompileOpcode(c *compiler.Compiler) error {
 	var bytebuf [1]byte
 	_, err := c.Input.Read(bytebuf[:])
 	if err != nil {
 		return err
 	}
 
+	pos, err := c.Input.Seek(0, 1)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, " opcode: 0x%08x -> 0x%02x\n", pos-1, bytebuf[0])
+
 	switch bytebuf[0] {
 	case 0x00:
 		// NOP
 		// No Operation
-		compileInstrNOP()
+		return compileInstrNOP(c)
 	case 0x01:
 		// LD BC, nn
 		// Load 16-bit immediate into BC
@@ -1923,23 +2014,24 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(CompositeRegister{B, C}, uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrLD(c, CompositeReg{B, C},
+			Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0x02:
 		// LD (BC), A
 		// Save A to address pointed by BC
-		compileInstrLD(IndirectRegister((BC)), A)
+		return compileInstrLD(c, IndirectComposite(BC), A)
 	case 0x03:
 		// INC BC
 		// Increment 16-bit BC
-		compileInstrINC(CompositeRegister{B, C})
+		return compileInstrINC(c, CompositeReg{B, C})
 	case 0x04:
 		// INC B
 		// Increment B
-		compileInstrINC(B)
+		return compileInstrINC(c, B)
 	case 0x05:
 		// DEC B
 		// Decrement B
-		compileInstrDEC(B)
+		return compileInstrDEC(c, B)
 	case 0x06:
 		// LD B, n
 		// Load 8-bit immediate into B
@@ -1948,11 +2040,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(B, operands[0])
+		return compileInstrLD(c, B, Immediate8(operands[0]))
 	case 0x07:
 		// RLC A
 		// Rotate A left with carry
-		compileInstrRLC(A)
+		return compileInstrRLC(c, A)
 	case 0x08:
 		// LD (nn), SP
 		// Save SP to given address
@@ -1961,27 +2053,27 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(uint16(operands[1])<<8|uint16(operands[0]), SP)
+		return compileInstrLD(c, Immediate8(uint16(operands[1])<<8|uint16(operands[0])), SP)
 	case 0x09:
 		// ADD HL, BC
 		// Add 16-bit BC to HL
-		compileInstrADD(CompositeRegister{H, L}, CompositeRegister{B, C})
+		return compileInstrADD(c, CompositeReg{H, L}, CompositeReg{B, C})
 	case 0x0A:
 		// LD A, (BC)
 		// Load A from address pointed to by BC
-		compileInstrLD(A, IndirectRegister((BC)))
+		return compileInstrLD(c, A, IndirectComposite(BC))
 	case 0x0B:
 		// DEC BC
 		// Decrement 16-bit BC
-		compileInstrDEC(CompositeRegister{B, C})
+		return compileInstrDEC(c, CompositeReg{B, C})
 	case 0x0C:
 		// INC C
 		// Increment C
-		compileInstrINC(C)
+		return compileInstrINC(c, C)
 	case 0x0D:
 		// DEC C
 		// Decrement C
-		compileInstrDEC(C)
+		return compileInstrDEC(c, C)
 	case 0x0E:
 		// LD C, n
 		// Load 8-bit immediate into C
@@ -1990,15 +2082,15 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(C, operands[0])
+		return compileInstrLD(c, C, Immediate8(operands[0]))
 	case 0x0F:
 		// RRC A
 		// Rotate A right with carry
-		compileInstrRRC(A)
+		return compileInstrRRC(c, A)
 	case 0x10:
 		// STOP
 		// Stop processor
-		compileInstrSTOP()
+		return compileInstrSTOP(c)
 	case 0x11:
 		// LD DE, nn
 		// Load 16-bit immediate into DE
@@ -2007,23 +2099,23 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(CompositeRegister{D, E}, uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrLD(c, DE, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0x12:
 		// LD (DE), A
 		// Save A to address pointed by DE
-		compileInstrLD(IndirectRegister((DE)), A)
+		return compileInstrLD(c, IndirectComposite(DE), A)
 	case 0x13:
 		// INC DE
 		// Increment 16-bit DE
-		compileInstrINC(CompositeRegister{D, E})
+		return compileInstrINC(c, CompositeReg{D, E})
 	case 0x14:
 		// INC D
 		// Increment D
-		compileInstrINC(D)
+		return compileInstrINC(c, D)
 	case 0x15:
 		// DEC D
 		// Decrement D
-		compileInstrDEC(D)
+		return compileInstrDEC(c, D)
 	case 0x16:
 		// LD D, n
 		// Load 8-bit immediate into D
@@ -2032,11 +2124,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(D, operands[0])
+		return compileInstrLD(c, D, Immediate8(operands[0]))
 	case 0x17:
 		// RL A
 		// Rotate A left
-		compileInstrRL(A)
+		return compileInstrRL(c, A)
 	case 0x18:
 		// JR n
 		// Relative jump by signed immediate
@@ -2045,27 +2137,27 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJR(operands[0])
+		return compileInstrJR(c, Immediate8(operands[0]))
 	case 0x19:
 		// ADD HL, DE
 		// Add 16-bit DE to HL
-		compileInstrADD(CompositeRegister{H, L}, CompositeRegister{D, E})
+		return compileInstrADD(c, CompositeReg{H, L}, CompositeReg{D, E})
 	case 0x1A:
 		// LD A, (DE)
 		// Load A from address pointed to by DE
-		compileInstrLD(A, IndirectRegister((DE)))
+		return compileInstrLD(c, A, IndirectComposite(DE))
 	case 0x1B:
 		// DEC DE
 		// Decrement 16-bit DE
-		compileInstrDEC(CompositeRegister{D, E})
+		return compileInstrDEC(c, CompositeReg{D, E})
 	case 0x1C:
 		// INC E
 		// Increment E
-		compileInstrINC(E)
+		return compileInstrINC(c, E)
 	case 0x1D:
 		// DEC E
 		// Decrement E
-		compileInstrDEC(E)
+		return compileInstrDEC(c, E)
 	case 0x1E:
 		// LD E, n
 		// Load 8-bit immediate into E
@@ -2074,11 +2166,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(E, operands[0])
+		return compileInstrLD(c, E, Immediate8(operands[0]))
 	case 0x1F:
 		// RR A
 		// Rotate A right
-		compileInstrRR(A)
+		return compileInstrRR(c, A)
 	case 0x20:
 		// JR NZ, n
 		// Relative jump by signed immediate if last result was not zero
@@ -2087,7 +2179,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJR(Condition(NZ), operands[0])
+		return compileInstrJR(c, IfNZ, Immediate8(operands[0]))
 	case 0x21:
 		// LD HL, nn
 		// Load 16-bit immediate into HL
@@ -2096,23 +2188,23 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(CompositeRegister{H, L}, uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrLD(c, HL, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0x22:
 		// LDI (HL), A
 		// Save A to address pointed by HL, and increment HL
-		compileInstrLDI(IndirectRegister((HL)), A)
+		return compileInstrLDI(c, IndirectComposite(HL), A)
 	case 0x23:
 		// INC HL
 		// Increment 16-bit HL
-		compileInstrINC(CompositeRegister{H, L})
+		return compileInstrINC(c, HL)
 	case 0x24:
 		// INC H
 		// Increment H
-		compileInstrINC(H)
+		return compileInstrINC(c, H)
 	case 0x25:
 		// DEC H
 		// Decrement H
-		compileInstrDEC(H)
+		return compileInstrDEC(c, H)
 	case 0x26:
 		// LD H, n
 		// Load 8-bit immediate into H
@@ -2121,11 +2213,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(H, operands[0])
+		return compileInstrLD(c, H, Immediate8(operands[0]))
 	case 0x27:
 		// DAA
 		// Adjust A for BCD addition
-		compileInstrDAA()
+		return compileInstrDAA(c)
 	case 0x28:
 		// JR Z, n
 		// Relative jump by signed immediate if last result was zero
@@ -2134,27 +2226,27 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJR(Condition(Z), operands[0])
+		return compileInstrJR(c, IfZ, Immediate8(operands[0]))
 	case 0x29:
 		// ADD HL, HL
 		// Add 16-bit HL to HL
-		compileInstrADD(CompositeRegister{H, L}, CompositeRegister{H, L})
+		return compileInstrADD(c, HL, HL)
 	case 0x2A:
 		// LDI A, (HL)
 		// Load A from address pointed to by HL, and increment HL
-		compileInstrLDI(A, IndirectRegister((HL)))
+		return compileInstrLDI(c, A, IndirectComposite(HL))
 	case 0x2B:
 		// DEC HL
 		// Decrement 16-bit HL
-		compileInstrDEC(CompositeRegister{H, L})
+		return compileInstrDEC(c, HL)
 	case 0x2C:
 		// INC L
 		// Increment L
-		compileInstrINC(L)
+		return compileInstrINC(c, L)
 	case 0x2D:
 		// DEC L
 		// Decrement L
-		compileInstrDEC(L)
+		return compileInstrDEC(c, L)
 	case 0x2E:
 		// LD L, n
 		// Load 8-bit immediate into L
@@ -2163,11 +2255,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(L, operands[0])
+		return compileInstrLD(c, L, Immediate8(operands[0]))
 	case 0x2F:
 		// CPL
 		// Complement (logical NOT) on A
-		compileInstrCPL()
+		return compileInstrCPL(c)
 	case 0x30:
 		// JR NC, n
 		// Relative jump by signed immediate if last result caused no carry
@@ -2176,7 +2268,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJR(Condition(NC), operands[0])
+		return compileInstrJR(c, IfNC, Immediate8(operands[0]))
 	case 0x31:
 		// LD SP, nn
 		// Load 16-bit immediate into SP
@@ -2185,23 +2277,23 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(SP, uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrLD(c, SP, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0x32:
 		// LDD (HL), A
 		// Save A to address pointed by HL, and decrement HL
-		compileInstrLDD(IndirectRegister((HL)), A)
+		return compileInstrLDD(c, IndirectComposite(HL), A)
 	case 0x33:
 		// INC SP
 		// Increment 16-bit HL
-		compileInstrINC(SP)
+		return compileInstrINC(c, SP)
 	case 0x34:
 		// INC (HL)
 		// Increment value pointed by HL
-		compileInstrINC(IndirectRegister((HL)))
+		return compileInstrINC(c, IndirectComposite(HL))
 	case 0x35:
 		// DEC (HL)
 		// Decrement value pointed by HL
-		compileInstrDEC(IndirectRegister((HL)))
+		return compileInstrDEC(c, IndirectComposite(HL))
 	case 0x36:
 		// LD (HL), n
 		// Load 8-bit immediate into address pointed by HL
@@ -2210,11 +2302,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(IndirectRegister((HL)), operands[0])
+		return compileInstrLD(c, IndirectComposite(HL), Immediate8(operands[0]))
 	case 0x37:
 		// SCF
 		// Set carry flag
-		compileInstrSCF()
+		return compileInstrSCF(c)
 	case 0x38:
 		// JR C, n
 		// Relative jump by signed immediate if last result caused carry
@@ -2223,27 +2315,27 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJR(C, operands[0])
+		return compileInstrJR(c, C, Immediate8(operands[0]))
 	case 0x39:
 		// ADD HL, SP
 		// Add 16-bit SP to HL
-		compileInstrADD(CompositeRegister{H, L}, SP)
+		return compileInstrADD(c, HL, SP)
 	case 0x3A:
 		// LDD A, (HL)
 		// Load A from address pointed to by HL, and decrement HL
-		compileInstrLDD(A, IndirectRegister((HL)))
+		return compileInstrLDD(c, A, IndirectComposite(HL))
 	case 0x3B:
 		// DEC SP
 		// Decrement 16-bit SP
-		compileInstrDEC(SP)
+		return compileInstrDEC(c, SP)
 	case 0x3C:
 		// INC A
 		// Increment A
-		compileInstrINC(A)
+		return compileInstrINC(c, A)
 	case 0x3D:
 		// DEC A
 		// Decrement A
-		compileInstrDEC(A)
+		return compileInstrDEC(c, A)
 	case 0x3E:
 		// LD A, n
 		// Load 8-bit immediate into A
@@ -2252,531 +2344,531 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(A, operands[0])
+		return compileInstrLD(c, A, Immediate8(operands[0]))
 	case 0x3F:
 		// CCF
 		// Clear carry flag
-		compileInstrCCF()
+		return compileInstrCCF(c)
 	case 0x40:
 		// LD B, B
 		// Copy B to B
-		compileInstrLD(B, B)
+		return compileInstrLD(c, B, B)
 	case 0x41:
 		// LD B, C
 		// Copy C to B
-		compileInstrLD(B, C)
+		return compileInstrLD(c, B, C)
 	case 0x42:
 		// LD B, D
 		// Copy D to B
-		compileInstrLD(B, D)
+		return compileInstrLD(c, B, D)
 	case 0x43:
 		// LD B, E
 		// Copy E to B
-		compileInstrLD(B, E)
+		return compileInstrLD(c, B, E)
 	case 0x44:
 		// LD B, H
 		// Copy H to B
-		compileInstrLD(B, H)
+		return compileInstrLD(c, B, H)
 	case 0x45:
 		// LD B, L
 		// Copy L to B
-		compileInstrLD(B, L)
+		return compileInstrLD(c, B, L)
 	case 0x46:
 		// LD B, (HL)
 		// Copy value pointed by HL to B
-		compileInstrLD(B, IndirectRegister((HL)))
+		return compileInstrLD(c, B, IndirectComposite(HL))
 	case 0x47:
 		// LD B, A
 		// Copy A to B
-		compileInstrLD(B, A)
+		return compileInstrLD(c, B, A)
 	case 0x48:
 		// LD C, B
 		// Copy B to C
-		compileInstrLD(C, B)
+		return compileInstrLD(c, C, B)
 	case 0x49:
 		// LD C, C
 		// Copy C to C
-		compileInstrLD(C, C)
+		return compileInstrLD(c, C, C)
 	case 0x4A:
 		// LD C, D
 		// Copy D to C
-		compileInstrLD(C, D)
+		return compileInstrLD(c, C, D)
 	case 0x4B:
 		// LD C, E
 		// Copy E to C
-		compileInstrLD(C, E)
+		return compileInstrLD(c, C, E)
 	case 0x4C:
 		// LD C, H
 		// Copy H to C
-		compileInstrLD(C, H)
+		return compileInstrLD(c, C, H)
 	case 0x4D:
 		// LD C, L
 		// Copy L to C
-		compileInstrLD(C, L)
+		return compileInstrLD(c, C, L)
 	case 0x4E:
 		// LD C, (HL)
 		// Copy value pointed by HL to C
-		compileInstrLD(C, IndirectRegister((HL)))
+		return compileInstrLD(c, C, IndirectComposite(HL))
 	case 0x4F:
 		// LD C, A
 		// Copy A to C
-		compileInstrLD(C, A)
+		return compileInstrLD(c, C, A)
 	case 0x50:
 		// LD D, B
 		// Copy B to D
-		compileInstrLD(D, B)
+		return compileInstrLD(c, D, B)
 	case 0x51:
 		// LD D, C
 		// Copy C to D
-		compileInstrLD(D, C)
+		return compileInstrLD(c, D, C)
 	case 0x52:
 		// LD D, D
 		// Copy D to D
-		compileInstrLD(D, D)
+		return compileInstrLD(c, D, D)
 	case 0x53:
 		// LD D, E
 		// Copy E to D
-		compileInstrLD(D, E)
+		return compileInstrLD(c, D, E)
 	case 0x54:
 		// LD D, H
 		// Copy H to D
-		compileInstrLD(D, H)
+		return compileInstrLD(c, D, H)
 	case 0x55:
 		// LD D, L
 		// Copy L to D
-		compileInstrLD(D, L)
+		return compileInstrLD(c, D, L)
 	case 0x56:
 		// LD D, (HL)
 		// Copy value pointed by HL to D
-		compileInstrLD(D, IndirectRegister((HL)))
+		return compileInstrLD(c, D, IndirectComposite(HL))
 	case 0x57:
 		// LD D, A
 		// Copy A to D
-		compileInstrLD(D, A)
+		return compileInstrLD(c, D, A)
 	case 0x58:
 		// LD E, B
 		// Copy B to E
-		compileInstrLD(E, B)
+		return compileInstrLD(c, E, B)
 	case 0x59:
 		// LD E, C
 		// Copy C to E
-		compileInstrLD(E, C)
+		return compileInstrLD(c, E, C)
 	case 0x5A:
 		// LD E, D
 		// Copy D to E
-		compileInstrLD(E, D)
+		return compileInstrLD(c, E, D)
 	case 0x5B:
 		// LD E, E
 		// Copy E to E
-		compileInstrLD(E, E)
+		return compileInstrLD(c, E, E)
 	case 0x5C:
 		// LD E, H
 		// Copy H to E
-		compileInstrLD(E, H)
+		return compileInstrLD(c, E, H)
 	case 0x5D:
 		// LD E, L
 		// Copy L to E
-		compileInstrLD(E, L)
+		return compileInstrLD(c, E, L)
 	case 0x5E:
 		// LD E, (HL)
 		// Copy value pointed by HL to E
-		compileInstrLD(E, IndirectRegister((HL)))
+		return compileInstrLD(c, E, IndirectComposite(HL))
 	case 0x5F:
 		// LD E, A
 		// Copy A to E
-		compileInstrLD(E, A)
+		return compileInstrLD(c, E, A)
 	case 0x60:
 		// LD H, B
 		// Copy B to H
-		compileInstrLD(H, B)
+		return compileInstrLD(c, H, B)
 	case 0x61:
 		// LD H, C
 		// Copy C to H
-		compileInstrLD(H, C)
+		return compileInstrLD(c, H, C)
 	case 0x62:
 		// LD H, D
 		// Copy D to H
-		compileInstrLD(H, D)
+		return compileInstrLD(c, H, D)
 	case 0x63:
 		// LD H, E
 		// Copy E to H
-		compileInstrLD(H, E)
+		return compileInstrLD(c, H, E)
 	case 0x64:
 		// LD H, H
 		// Copy H to H
-		compileInstrLD(H, H)
+		return compileInstrLD(c, H, H)
 	case 0x65:
 		// LD H, L
 		// Copy L to H
-		compileInstrLD(H, L)
+		return compileInstrLD(c, H, L)
 	case 0x66:
 		// LD H, (HL)
 		// Copy value pointed by HL to H
-		compileInstrLD(H, IndirectRegister((HL)))
+		return compileInstrLD(c, H, IndirectComposite(HL))
 	case 0x67:
 		// LD H, A
 		// Copy A to H
-		compileInstrLD(H, A)
+		return compileInstrLD(c, H, A)
 	case 0x68:
 		// LD L, B
 		// Copy B to L
-		compileInstrLD(L, B)
+		return compileInstrLD(c, L, B)
 	case 0x69:
 		// LD L, C
 		// Copy C to L
-		compileInstrLD(L, C)
+		return compileInstrLD(c, L, C)
 	case 0x6A:
 		// LD L, D
 		// Copy D to L
-		compileInstrLD(L, D)
+		return compileInstrLD(c, L, D)
 	case 0x6B:
 		// LD L, E
 		// Copy E to L
-		compileInstrLD(L, E)
+		return compileInstrLD(c, L, E)
 	case 0x6C:
 		// LD L, H
 		// Copy H to L
-		compileInstrLD(L, H)
+		return compileInstrLD(c, L, H)
 	case 0x6D:
 		// LD L, L
 		// Copy L to L
-		compileInstrLD(L, L)
+		return compileInstrLD(c, L, L)
 	case 0x6E:
 		// LD L, (HL)
 		// Copy value pointed by HL to L
-		compileInstrLD(L, IndirectRegister((HL)))
+		return compileInstrLD(c, L, IndirectComposite(HL))
 	case 0x6F:
 		// LD L, A
 		// Copy A to L
-		compileInstrLD(L, A)
+		return compileInstrLD(c, L, A)
 	case 0x70:
 		// LD (HL), B
 		// Copy B to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), B)
+		return compileInstrLD(c, IndirectComposite(HL), B)
 	case 0x71:
 		// LD (HL), C
 		// Copy C to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), C)
+		return compileInstrLD(c, IndirectComposite(HL), C)
 	case 0x72:
 		// LD (HL), D
 		// Copy D to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), D)
+		return compileInstrLD(c, IndirectComposite(HL), D)
 	case 0x73:
 		// LD (HL), E
 		// Copy E to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), E)
+		return compileInstrLD(c, IndirectComposite(HL), E)
 	case 0x74:
 		// LD (HL), H
 		// Copy H to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), H)
+		return compileInstrLD(c, IndirectComposite(HL), H)
 	case 0x75:
 		// LD (HL), L
 		// Copy L to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), L)
+		return compileInstrLD(c, IndirectComposite(HL), L)
 	case 0x76:
 		// HALT
 		// Halt processor
-		compileInstrHALT()
+		return compileInstrHALT(c)
 	case 0x77:
 		// LD (HL), A
 		// Copy A to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), A)
+		return compileInstrLD(c, IndirectComposite(HL), A)
 	case 0x78:
 		// LD A, B
 		// Copy B to A
-		compileInstrLD(A, B)
+		return compileInstrLD(c, A, B)
 	case 0x79:
 		// LD A, C
 		// Copy C to A
-		compileInstrLD(A, C)
+		return compileInstrLD(c, A, C)
 	case 0x7A:
 		// LD A, D
 		// Copy D to A
-		compileInstrLD(A, D)
+		return compileInstrLD(c, A, D)
 	case 0x7B:
 		// LD A, E
 		// Copy E to A
-		compileInstrLD(A, E)
+		return compileInstrLD(c, A, E)
 	case 0x7C:
 		// LD A, H
 		// Copy H to A
-		compileInstrLD(A, H)
+		return compileInstrLD(c, A, H)
 	case 0x7D:
 		// LD A, L
 		// Copy L to A
-		compileInstrLD(A, L)
+		return compileInstrLD(c, A, L)
 	case 0x7E:
 		// LD A, (HL)
 		// Copy value pointed by HL to A
-		compileInstrLD(A, IndirectRegister((HL)))
+		return compileInstrLD(c, A, IndirectComposite(HL))
 	case 0x7F:
 		// LD A, A
 		// Copy A to A
-		compileInstrLD(A, A)
+		return compileInstrLD(c, A, A)
 	case 0x80:
 		// ADD A, B
 		// Add B to A
-		compileInstrADD(A, B)
+		return compileInstrADD(c, A, B)
 	case 0x81:
 		// ADD A, C
 		// Add C to A
-		compileInstrADD(A, C)
+		return compileInstrADD(c, A, C)
 	case 0x82:
 		// ADD A, D
 		// Add D to A
-		compileInstrADD(A, D)
+		return compileInstrADD(c, A, D)
 	case 0x83:
 		// ADD A, E
 		// Add E to A
-		compileInstrADD(A, E)
+		return compileInstrADD(c, A, E)
 	case 0x84:
 		// ADD A, H
 		// Add H to A
-		compileInstrADD(A, H)
+		return compileInstrADD(c, A, H)
 	case 0x85:
 		// ADD A, L
 		// Add L to A
-		compileInstrADD(A, L)
+		return compileInstrADD(c, A, L)
 	case 0x86:
 		// ADD A, (HL)
 		// Add value pointed by HL to A
-		compileInstrADD(A, IndirectRegister((HL)))
+		return compileInstrADD(c, A, IndirectComposite(HL))
 	case 0x87:
 		// ADD A, A
 		// Add A to A
-		compileInstrADD(A, A)
+		return compileInstrADD(c, A, A)
 	case 0x88:
 		// ADC A, B
 		// Add B and carry flag to A
-		compileInstrADC(A, B)
+		return compileInstrADC(c, A, B)
 	case 0x89:
 		// ADC A, C
 		// Add C and carry flag to A
-		compileInstrADC(A, C)
+		return compileInstrADC(c, A, C)
 	case 0x8A:
 		// ADC A, D
 		// Add D and carry flag to A
-		compileInstrADC(A, D)
+		return compileInstrADC(c, A, D)
 	case 0x8B:
 		// ADC A, E
 		// Add E and carry flag to A
-		compileInstrADC(A, E)
+		return compileInstrADC(c, A, E)
 	case 0x8C:
 		// ADC A, H
 		// Add H and carry flag to A
-		compileInstrADC(A, H)
+		return compileInstrADC(c, A, H)
 	case 0x8D:
 		// ADC A, L
 		// Add and carry flag L to A
-		compileInstrADC(A, L)
+		return compileInstrADC(c, A, L)
 	case 0x8E:
 		// ADC A, (HL)
 		// Add value pointed by HL and carry flag to A
-		compileInstrADC(A, IndirectRegister((HL)))
+		return compileInstrADC(c, A, IndirectComposite(HL))
 	case 0x8F:
 		// ADC A, A
 		// Add A and carry flag to A
-		compileInstrADC(A, A)
+		return compileInstrADC(c, A, A)
 	case 0x90:
 		// SUB A, B
 		// Subtract B from A
-		compileInstrSUB(A, B)
+		return compileInstrSUB(c, A, B)
 	case 0x91:
 		// SUB A, C
 		// Subtract C from A
-		compileInstrSUB(A, C)
+		return compileInstrSUB(c, A, C)
 	case 0x92:
 		// SUB A, D
 		// Subtract D from A
-		compileInstrSUB(A, D)
+		return compileInstrSUB(c, A, D)
 	case 0x93:
 		// SUB A, E
 		// Subtract E from A
-		compileInstrSUB(A, E)
+		return compileInstrSUB(c, A, E)
 	case 0x94:
 		// SUB A, H
 		// Subtract H from A
-		compileInstrSUB(A, H)
+		return compileInstrSUB(c, A, H)
 	case 0x95:
 		// SUB A, L
 		// Subtract L from A
-		compileInstrSUB(A, L)
+		return compileInstrSUB(c, A, L)
 	case 0x96:
 		// SUB A, (HL)
 		// Subtract value pointed by HL from A
-		compileInstrSUB(A, IndirectRegister((HL)))
+		return compileInstrSUB(c, A, IndirectComposite(HL))
 	case 0x97:
 		// SUB A, A
 		// Subtract A from A
-		compileInstrSUB(A, A)
+		return compileInstrSUB(c, A, A)
 	case 0x98:
 		// SBC A, B
 		// Subtract B and carry flag from A
-		compileInstrSBC(A, B)
+		return compileInstrSBC(c, A, B)
 	case 0x99:
 		// SBC A, C
 		// Subtract C and carry flag from A
-		compileInstrSBC(A, C)
+		return compileInstrSBC(c, A, C)
 	case 0x9A:
 		// SBC A, D
 		// Subtract D and carry flag from A
-		compileInstrSBC(A, D)
+		return compileInstrSBC(c, A, D)
 	case 0x9B:
 		// SBC A, E
 		// Subtract E and carry flag from A
-		compileInstrSBC(A, E)
+		return compileInstrSBC(c, A, E)
 	case 0x9C:
 		// SBC A, H
 		// Subtract H and carry flag from A
-		compileInstrSBC(A, H)
+		return compileInstrSBC(c, A, H)
 	case 0x9D:
 		// SBC A, L
 		// Subtract and carry flag L from A
-		compileInstrSBC(A, L)
+		return compileInstrSBC(c, A, L)
 	case 0x9E:
 		// SBC A, (HL)
 		// Subtract value pointed by HL and carry flag from A
-		compileInstrSBC(A, IndirectRegister((HL)))
+		return compileInstrSBC(c, A, IndirectComposite(HL))
 	case 0x9F:
 		// SBC A, A
 		// Subtract A and carry flag from A
-		compileInstrSBC(A, A)
+		return compileInstrSBC(c, A, A)
 	case 0xA0:
 		// AND B
 		// Logical AND B against A
-		compileInstrAND(B)
+		return compileInstrAND(c, B)
 	case 0xA1:
 		// AND C
 		// Logical AND C against A
-		compileInstrAND(C)
+		return compileInstrAND(c, C)
 	case 0xA2:
 		// AND D
 		// Logical AND D against A
-		compileInstrAND(D)
+		return compileInstrAND(c, D)
 	case 0xA3:
 		// AND E
 		// Logical AND E against A
-		compileInstrAND(E)
+		return compileInstrAND(c, E)
 	case 0xA4:
 		// AND H
 		// Logical AND H against A
-		compileInstrAND(H)
+		return compileInstrAND(c, H)
 	case 0xA5:
 		// AND L
 		// Logical AND L against A
-		compileInstrAND(L)
+		return compileInstrAND(c, L)
 	case 0xA6:
 		// AND (HL)
 		// Logical AND value pointed by HL against A
-		compileInstrAND(IndirectRegister((HL)))
+		return compileInstrAND(c, IndirectComposite(HL))
 	case 0xA7:
 		// AND A
 		// Logical AND A against A
-		compileInstrAND(A)
+		return compileInstrAND(c, A)
 	case 0xA8:
 		// XOR B
 		// Logical XOR B against A
-		compileInstrXOR(B)
+		return compileInstrXOR(c, B)
 	case 0xA9:
 		// XOR C
 		// Logical XOR C against A
-		compileInstrXOR(C)
+		return compileInstrXOR(c, C)
 	case 0xAA:
 		// XOR D
 		// Logical XOR D against A
-		compileInstrXOR(D)
+		return compileInstrXOR(c, D)
 	case 0xAB:
 		// XOR E
 		// Logical XOR E against A
-		compileInstrXOR(E)
+		return compileInstrXOR(c, E)
 	case 0xAC:
 		// XOR H
 		// Logical XOR H against A
-		compileInstrXOR(H)
+		return compileInstrXOR(c, H)
 	case 0xAD:
 		// XOR L
 		// Logical XOR L against A
-		compileInstrXOR(L)
+		return compileInstrXOR(c, L)
 	case 0xAE:
 		// XOR (HL)
 		// Logical XOR value pointed by HL against A
-		compileInstrXOR(IndirectRegister((HL)))
+		return compileInstrXOR(c, IndirectComposite(HL))
 	case 0xAF:
 		// XOR A
 		// Logical XOR A against A
-		compileInstrXOR(A)
+		return compileInstrXOR(c, A)
 	case 0xB0:
 		// OR B
 		// Logical OR B against A
-		compileInstrOR(B)
+		return compileInstrOR(c, B)
 	case 0xB1:
 		// OR C
 		// Logical OR C against A
-		compileInstrOR(C)
+		return compileInstrOR(c, C)
 	case 0xB2:
 		// OR D
 		// Logical OR D against A
-		compileInstrOR(D)
+		return compileInstrOR(c, D)
 	case 0xB3:
 		// OR E
 		// Logical OR E against A
-		compileInstrOR(E)
+		return compileInstrOR(c, E)
 	case 0xB4:
 		// OR H
 		// Logical OR H against A
-		compileInstrOR(H)
+		return compileInstrOR(c, H)
 	case 0xB5:
 		// OR L
 		// Logical OR L against A
-		compileInstrOR(L)
+		return compileInstrOR(c, L)
 	case 0xB6:
 		// OR (HL)
 		// Logical OR value pointed by HL against A
-		compileInstrOR(IndirectRegister((HL)))
+		return compileInstrOR(c, IndirectComposite(HL))
 	case 0xB7:
 		// OR A
 		// Logical OR A against A
-		compileInstrOR(A)
+		return compileInstrOR(c, A)
 	case 0xB8:
 		// CP B
 		// Compare B against A
-		compileInstrCP(B)
+		return compileInstrCP(c, B)
 	case 0xB9:
 		// CP C
 		// Compare C against A
-		compileInstrCP(C)
+		return compileInstrCP(c, C)
 	case 0xBA:
 		// CP D
 		// Compare D against A
-		compileInstrCP(D)
+		return compileInstrCP(c, D)
 	case 0xBB:
 		// CP E
 		// Compare E against A
-		compileInstrCP(E)
+		return compileInstrCP(c, E)
 	case 0xBC:
 		// CP H
 		// Compare H against A
-		compileInstrCP(H)
+		return compileInstrCP(c, H)
 	case 0xBD:
 		// CP L
 		// Compare L against A
-		compileInstrCP(L)
+		return compileInstrCP(c, L)
 	case 0xBE:
 		// CP (HL)
 		// Compare value pointed by HL against A
-		compileInstrCP(IndirectRegister((HL)))
+		return compileInstrCP(c, IndirectComposite(HL))
 	case 0xBF:
 		// CP A
 		// Compare A against A
-		compileInstrCP(A)
+		return compileInstrCP(c, A)
 	case 0xC0:
 		// RET NZ
 		// Return if last result was not zero
-		compileInstrRET(Condition(NZ))
+		return compileInstrRET(c, IfNZ)
 	case 0xC1:
 		// POP BC
 		// Pop 16-bit value from stack into BC
-		compileInstrPOP(CompositeRegister{B, C})
+		return compileInstrPOP(c, BC)
 	case 0xC2:
 		// JP NZ, nn
 		// Absolute jump to 16-bit location if last result was not zero
@@ -2785,7 +2877,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJP(Condition(NZ), uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrJP(c, IfNZ, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xC3:
 		// JP nn
 		// Absolute jump to 16-bit location
@@ -2794,7 +2886,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJP(uint16(operands[1])<<8 | uint16(operands[0]))
+		return compileInstrJP(c, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xC4:
 		// CALL NZ, nn
 		// Call routine at 16-bit location if last result was not zero
@@ -2803,11 +2895,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrCALL(Condition(NZ), uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrCALL(c, IfNZ, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xC5:
 		// PUSH BC
 		// Push 16-bit BC onto stack
-		compileInstrPUSH(CompositeRegister{B, C})
+		return compileInstrPUSH(c, BC)
 	case 0xC6:
 		// ADD A, n
 		// Add 8-bit immediate to A
@@ -2816,19 +2908,19 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrADD(A, operands[0])
+		return compileInstrADD(c, A, Immediate8(operands[0]))
 	case 0xC7:
 		// RST 0
 		// Call routine at address 0000h
-		compileInstrRST(StaticParam(0))
+		return compileInstrRST(c, StaticParam(0))
 	case 0xC8:
 		// RET Z
 		// Return if last result was zero
-		compileInstrRET(Condition(Z))
+		return compileInstrRET(c, IfZ)
 	case 0xC9:
 		// RET
 		// Return to calling routine
-		compileInstrRET()
+		return compileInstrRET(c)
 	case 0xCA:
 		// JP Z, nn
 		// Absolute jump to 16-bit location if last result was zero
@@ -2837,9 +2929,9 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJP(Condition(Z), uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrJP(c, IfZ, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xCB:
-		return compileExtCB(c)
+		return a.compileExtCB(c)
 	case 0xCC:
 		// CALL Z, nn
 		// Call routine at 16-bit location if last result was zero
@@ -2848,7 +2940,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrCALL(Condition(Z), uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrCALL(c, IfZ, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xCD:
 		// CALL nn
 		// Call routine at 16-bit location
@@ -2857,7 +2949,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrCALL(uint16(operands[1])<<8 | uint16(operands[0]))
+		return compileInstrCALL(c, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xCE:
 		// ADC A, n
 		// Add 8-bit immediate and carry to A
@@ -2866,19 +2958,19 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrADC(A, operands[0])
+		return compileInstrADC(c, A, Immediate8(operands[0]))
 	case 0xCF:
 		// RST 8
 		// Call routine at address 0008h
-		compileInstrRST(StaticParam(8))
+		return compileInstrRST(c, StaticParam(8))
 	case 0xD0:
 		// RET NC
 		// Return if last result caused no carry
-		compileInstrRET(Condition(NC))
+		return compileInstrRET(c, IfNC)
 	case 0xD1:
 		// POP DE
 		// Pop 16-bit value from stack into DE
-		compileInstrPOP(CompositeRegister{D, E})
+		return compileInstrPOP(c, DE)
 	case 0xD2:
 		// JP NC, nn
 		// Absolute jump to 16-bit location if last result caused no carry
@@ -2887,11 +2979,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJP(Condition(NC), uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrJP(c, IfNC, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xD3:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xD4:
 		// CALL NC, nn
 		// Call routine at 16-bit location if last result caused no carry
@@ -2900,11 +2992,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrCALL(Condition(NC), uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrCALL(c, IfNC, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xD5:
 		// PUSH DE
 		// Push 16-bit DE onto stack
-		compileInstrPUSH(CompositeRegister{D, E})
+		return compileInstrPUSH(c, DE)
 	case 0xD6:
 		// SUB A, n
 		// Subtract 8-bit immediate from A
@@ -2913,19 +3005,19 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrSUB(A, operands[0])
+		return compileInstrSUB(c, A, Immediate8(operands[0]))
 	case 0xD7:
 		// RST 10
 		// Call routine at address 0010h
-		compileInstrRST(StaticParam(10))
+		return compileInstrRST(c, StaticParam(10))
 	case 0xD8:
 		// RET C
 		// Return if last result caused carry
-		compileInstrRET(C)
+		return compileInstrRET(c, C)
 	case 0xD9:
 		// RETI
 		// Enable interrupts and return to calling routine
-		compileInstrRETI()
+		return compileInstrRETI(c)
 	case 0xDA:
 		// JP C, nn
 		// Absolute jump to 16-bit location if last result caused carry
@@ -2934,11 +3026,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJP(C, uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrJP(c, C, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xDB:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xDC:
 		// CALL C, nn
 		// Call routine at 16-bit location if last result caused carry
@@ -2947,11 +3039,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrCALL(C, uint16(operands[1])<<8|uint16(operands[0]))
+		return compileInstrCALL(c, C, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xDD:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xDE:
 		// SBC A, n
 		// Subtract 8-bit immediate and carry from A
@@ -2960,11 +3052,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrSBC(A, operands[0])
+		return compileInstrSBC(c, A, Immediate8(operands[0]))
 	case 0xDF:
 		// RST 18
 		// Call routine at address 0018h
-		compileInstrRST(StaticParam(18))
+		return compileInstrRST(c, StaticParam(18))
 	case 0xE0:
 		// LDH (n), A
 		// Save A at address pointed to by (FF00h + 8-bit immediate)
@@ -2973,27 +3065,27 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLDH(operands[0], A)
+		return compileInstrLDH(c, Immediate8(operands[0]), A)
 	case 0xE1:
 		// POP HL
 		// Pop 16-bit value from stack into HL
-		compileInstrPOP(CompositeRegister{H, L})
+		return compileInstrPOP(c, HL)
 	case 0xE2:
 		// LDH (C), A
 		// Save A at address pointed to by (FF00h + C)
-		compileInstrLDH(IndirectRegister((C)), A)
+		return compileInstrLDH(c, IndirectReg(C), A)
 	case 0xE3:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xE4:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xE5:
 		// PUSH HL
 		// Push 16-bit HL onto stack
-		compileInstrPUSH(CompositeRegister{H, L})
+		return compileInstrPUSH(c, HL)
 	case 0xE6:
 		// AND n
 		// Logical AND 8-bit immediate against A
@@ -3002,11 +3094,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrAND(operands[0])
+		return compileInstrAND(c, Immediate8(operands[0]))
 	case 0xE7:
 		// RST 20
 		// Call routine at address 0020h
-		compileInstrRST(StaticParam(20))
+		return compileInstrRST(c, StaticParam(20))
 	case 0xE8:
 		// ADD SP, d
 		// Add signed 8-bit immediate to SP
@@ -3015,11 +3107,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrADD(SP, operands[0])
+		return compileInstrADD(c, SP, Immediate8(operands[0]))
 	case 0xE9:
 		// JP (HL)
 		// Jump to 16-bit value pointed by HL
-		compileInstrJP(IndirectRegister((HL)))
+		return compileInstrJP(c, IndirectComposite(HL))
 	case 0xEA:
 		// LD (nn), A
 		// Save A at given 16-bit address
@@ -3028,19 +3120,19 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(uint16(operands[1])<<8|uint16(operands[0]), A)
+		return compileInstrLD(c, Immediate16(uint16(operands[1])<<8|uint16(operands[0])), A)
 	case 0xEB:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xEC:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xED:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xEE:
 		// XOR n
 		// Logical XOR 8-bit immediate against A
@@ -3049,11 +3141,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrXOR(operands[0])
+		return compileInstrXOR(c, Immediate8(operands[0]))
 	case 0xEF:
 		// RST 28
 		// Call routine at address 0028h
-		compileInstrRST(StaticParam(28))
+		return compileInstrRST(c, StaticParam(28))
 	case 0xF0:
 		// LDH A, (n)
 		// Load A from address pointed to by (FF00h + 8-bit immediate)
@@ -3062,27 +3154,27 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLDH(A, operands[0])
+		return compileInstrLDH(c, A, Immediate8(operands[0]))
 	case 0xF1:
 		// POP AF
 		// Pop 16-bit value from stack into AF
-		compileInstrPOP(CompositeRegister{A, F})
+		return compileInstrPOP(c, AF)
 	case 0xF2:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xF3:
 		// DI
 		// DIsable interrupts
-		compileInstrDI()
+		return compileInstrDI(c)
 	case 0xF4:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xF5:
 		// PUSH AF
 		// Push 16-bit AF onto stack
-		compileInstrPUSH(CompositeRegister{A, F})
+		return compileInstrPUSH(c, AF)
 	case 0xF6:
 		// OR n
 		// Logical OR 8-bit immediate against A
@@ -3091,11 +3183,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrOR(operands[0])
+		return compileInstrOR(c, Immediate8(operands[0]))
 	case 0xF7:
 		// RST 30
 		// Call routine at address 0030h
-		compileInstrRST(StaticParam(30))
+		return compileInstrRST(c, StaticParam(30))
 	case 0xF8:
 		// LDHL SP, d
 		// Add signed 8-bit immediate to SP and save result in HL
@@ -3104,11 +3196,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLDHL(SP, operands[0])
+		return compileInstrLDHL(c, SP, Immediate8(operands[0]))
 	case 0xF9:
 		// LD SP, HL
 		// Copy HL to SP
-		compileInstrLD(SP, CompositeRegister{H, L})
+		return compileInstrLD(c, SP, HL)
 	case 0xFA:
 		// LD A, (nn)
 		// Load A from given 16-bit address
@@ -3117,19 +3209,19 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(A, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
+		return compileInstrLD(c, A, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xFB:
 		// EI
 		// Enable interrupts
-		compileInstrEI()
+		return compileInstrEI(c)
 	case 0xFC:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xFD:
 		// XX
 		// Operation removed in this CPU
-		compileInstrXX()
+		return compileInstrXX(c)
 	case 0xFE:
 		// CP n
 		// Compare 8-bit immediate against A
@@ -3138,10 +3230,12 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrCP(operands[0])
+		return compileInstrCP(c, Immediate8(operands[0]))
 	case 0xFF:
 		// RST 38
 		// Call routine at address 0038h
-		compileInstrRST(StaticParam(38))
+		return compileInstrRST(c, StaticParam(38))
 	}
+
+	return compiler.InvalidOpcode(bytebuf[0])
 }
