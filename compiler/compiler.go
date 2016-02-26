@@ -9,11 +9,14 @@ import (
 
 type Address uint16
 type Size uint16
-type Condition int
+type Condition string
 
 const (
-	CondAlways Condition = iota
-	CondZero
+	CondAlways = Condition("always")
+	CondZero = Condition("zero")
+	CondNonZero = Condition("non zero")
+	CondCarry = Condition("carry")
+	CondNonCarry = Condition("non carry")
 )
 
 type InvalidOpcode uint8
@@ -100,7 +103,7 @@ type Compiler struct {
 	arch        Arch
 	blocks      map[Address]*BasicBlock
 	codeRegions []Address
-	curInstrOfs Address
+	CurInstrAddr Address
 }
 
 func NewCompiler(input io.ReadSeeker, arch Arch) Compiler {
@@ -111,7 +114,7 @@ func NewCompiler(input io.ReadSeeker, arch Arch) Compiler {
 		arch:   arch,
 		blocks: make(map[Address]*BasicBlock),
 		codeRegions: []Address{0},
-		curInstrOfs: Address(0),
+		CurInstrAddr: Address(0),
 	}
 	comp.blocks[0] = &BasicBlock{}
 	return comp
@@ -133,7 +136,7 @@ func (c *Compiler) Compile() error {
 	return nil
 }
 
-func (c *Compiler) address() Address {
+func (c *Compiler) Address() Address {
 	addr, err := c.Input.Seek(0, 1)
 	if err != nil {
 		panic(fmt.Sprintf("can't get current pos in code stream: %v", err))
@@ -159,19 +162,20 @@ func (c *Compiler) popRegion() (Address, *BasicBlock) {
 }
 
 func (c *Compiler) PushInstr(compiledInstr string) {
+	endAddr := c.Address()
 	addr := c.curRegion()
 	instr := instruction{
-		codeSize: Size(c.address() - c.curInstrOfs),
+		codeSize: Size(endAddr - c.CurInstrAddr),
 		output:   compiledInstr,
 	}
 	c.blocks[addr].Body = append(c.blocks[addr].Body, instr)
-	c.curInstrOfs = c.address()
+	c.CurInstrAddr = endAddr
 }
 
 func (c *Compiler) PlaceJump(cond Condition, dest Address) error {
 	regAddr, regBlock := c.popRegion()
-	endAddr := c.address()
-	fmt.Fprintf(os.Stderr, "PlaceJump: block@%04x, jump ends at %04x (%v => %v)\n",
+	endAddr := c.Address()
+	fmt.Fprintf(os.Stderr, "PlaceJump: block@%04x, jump instr ends at %08x (%v => %08x)\n",
 		regAddr, endAddr, cond, dest)
 
 	regBlock.Cond = cond
@@ -190,7 +194,7 @@ func (c *Compiler) PlaceJump(cond Condition, dest Address) error {
 		// Look for target block in block map
 		for ofs, block := range c.blocks {
 			if ofs <= dest && dest < ofs+block.CodeSize {
-				fmt.Fprintf(os.Stderr, "splitting block %04x+%d around %d\n",
+				fmt.Fprintf(os.Stderr, "splitting block %04x+%d around %08X\n",
 					ofs, block.CodeSize, dest)
 				// Split block around the jump dest
 				prec, foll, err := block.Split(dest - ofs)
@@ -205,17 +209,24 @@ func (c *Compiler) PlaceJump(cond Condition, dest Address) error {
 		}
 
 		if regBlock.Cont == nil {
-			// Still not found: jump destination is a new
-			// region of code
+			// Leave the message as a comment after debugging...
+			fmt.Fprintf(os.Stderr, "\tjump destination is a new region of code\n")
+
 			newBlock := c.pushRegion(dest)
 			regBlock.Cont = newBlock
 		}
 	}
 
-	// endAddr := c.address()
 	regBlock.CodeSize = endAddr - regAddr
 	if cond != CondAlways {
+		fmt.Fprintf(os.Stderr, "\tcondition is not 'always': adding the block immediately after\n")
 		c.pushRegion(endAddr)
+	}
+
+	if len(c.codeRegions) > 0 {
+		_, err := c.Input.Seek(int64(c.curRegion()), 0)
+		c.CurInstrAddr = c.curRegion()
+		return err
 	}
 	return nil
 }

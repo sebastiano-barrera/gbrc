@@ -2,9 +2,9 @@ package gb
 
 import (
 	"fmt"
-	"os"
 	"gbrc/compiler"
 	"io"
+	"os"
 )
 
 // The type that ties all pieces together
@@ -13,13 +13,19 @@ type Arch struct{}
 // Operand types
 type Register8 int
 type Register16 int
-type IndirectReg Register16
 type CompositeReg struct{ lo, hi Register8 }
-type IndirectComposite CompositeReg
 type Immediate16 uint16
 type Immediate8 uint16
+
+type IndirectReg Register16
+type IndirectComposite CompositeReg
+type IndirectImm Immediate16
+
 type StaticParam int
-type Condition string
+type CondOperand struct {
+	Getter    string
+	Condition compiler.Condition
+}
 
 const (
 	A Register8 = iota
@@ -33,14 +39,14 @@ const (
 
 	SP Register16 = iota
 	PC
-
-	IfNZ = Condition("(! m.Flag(FlagZero))")
-	IfZ  = Condition("m.Flag(FlagZero)")
-	IfNC = Condition("(! m.Flag(FlagCarry))")
-	IfC  = Condition("m.Flag(FlagCarry)")
 )
 
 var (
+	IfNZ = CondOperand{"(! m.Flag(FlagZero))", compiler.CondNonZero}
+	IfZ  = CondOperand{"m.Flag(FlagZero)", compiler.CondZero}
+	IfNC = CondOperand{"(! m.Flag(FlagCarry))", compiler.CondNonCarry}
+	IfC  = CondOperand{"m.Flag(FlagCarry)", compiler.CondCarry}
+
 	HL = CompositeReg{H, L}
 	AF = CompositeReg{A, F}
 	BC = CompositeReg{B, C}
@@ -74,8 +80,13 @@ type Place interface {
 
 // Errors
 type (
-	SizeMismatch struct {left, right Place}
-	ReadOnlyWrite  struct{place Place}
+	SizeMismatch   struct{ left, right Place }
+	ReadOnlyWrite  struct{ place Place }
+	InvalidOperand struct {
+		instruction string
+		operand     Place
+		shouldBe    string
+	}
 )
 
 func (sm SizeMismatch) Error() string {
@@ -87,6 +98,10 @@ func (ro ReadOnlyWrite) Error() string {
 	return fmt.Sprintf("place is read-only: %v", ro.place)
 }
 
+func (invOp InvalidOperand) Error() string {
+	return fmt.Sprintf("invalid operand for %s: %v (should be %s)",
+		invOp.instruction, invOp.operand, invOp.shouldBe)
+}
 
 //
 // Implementations of Place for all the operand types
@@ -102,6 +117,7 @@ func (imm Immediate8) Setter(value Place) (string, error) {
 
 func (imm Immediate8) Size() uint { return 1 }
 
+
 func (imm Immediate16) String() string {
 	return fmt.Sprintf("0x%04x", uint16(imm))
 }
@@ -111,6 +127,19 @@ func (imm Immediate16) Setter(value Place) (string, error) {
 }
 
 func (imm Immediate16) Size() uint { return 2 }
+
+
+func (imm IndirectImm) String() string {
+	return fmt.Sprintf("m.MemRead(0x%04x)", uint16(imm))
+}
+
+func (imm IndirectImm) Setter(value Place) (string, error) {
+	stmt := fmt.Sprintf("m.MemWrite(0x%04x, %s)", uint16(imm), value)
+	return stmt, nil
+}
+
+func (imm IndirectImm) Size() uint { return 1 }
+
 
 func (reg Register8) String() string {
 	return fmt.Sprintf("m.Reg8[%d]", int(reg))
@@ -125,6 +154,7 @@ func (reg Register8) Setter(value Place) (string, error) {
 
 func (reg Register8) Size() uint { return 1 }
 
+
 func (reg Register16) String() string {
 	return fmt.Sprintf("m.Reg16[%d]", int(reg))
 }
@@ -138,7 +168,7 @@ func (reg Register16) Setter(value Place) (string, error) {
 
 func (reg Register16) Size() uint { return 2 }
 
-// type IndirectReg Register16
+
 func (reg IndirectReg) String() string {
 	return fmt.Sprintf("m.MemRead(%s)", Register16(reg))
 }
@@ -153,7 +183,7 @@ func (reg IndirectReg) Setter(value Place) (string, error) {
 
 func (reg IndirectReg) Size() uint { return 1 }
 
-// type CompositeReg struct{ lo, hi Register }
+
 func (reg CompositeReg) String() string {
 	return fmt.Sprintf("(uint16(%s) << 8 | uint16(%s))",
 		reg.hi, reg.lo)
@@ -184,7 +214,7 @@ func(val uint16) {
 
 func (reg CompositeReg) Size() uint { return 2 }
 
-// type IndirectComposite CompositeReg
+
 func (reg IndirectComposite) String() string {
 	return fmt.Sprintf("m.MemRead(%s)", CompositeReg(reg))
 }
@@ -198,6 +228,7 @@ func (reg IndirectComposite) Setter(value Place) (string, error) {
 }
 
 func (reg IndirectComposite) Size() uint { return 1 }
+
 
 func (expr *Expr) String() string {
 	terms := make([]interface{}, len(expr.Terms))
@@ -213,6 +244,7 @@ func (expr *Expr) Setter(value Place) (string, error) {
 
 func (expr *Expr) Size() uint { return expr.ValueSize }
 
+
 func (param StaticParam) String() string {
 	return fmt.Sprintf("%d", int(param))
 }
@@ -223,15 +255,17 @@ func (param StaticParam) Setter(value Place) (string, error) {
 
 func (param StaticParam) Size() uint { return 0 }
 
-func (cond Condition) String() string {
-	return string(cond)
+
+func (cond CondOperand) String() string {
+	return cond.Getter
 }
 
-func (cond Condition) Setter(value Place) (string, error) {
+func (cond CondOperand) Setter(value Place) (string, error) {
 	return "", ReadOnlyWrite{cond}
 }
 
-func (cond Condition) Size() uint { return 0 }
+func (cond CondOperand) Size() uint { return 0 }
+
 
 func compileInstrSLA(c *compiler.Compiler, operands ...Place) error {
 	// SLA E	- Shift E left preserving sign
@@ -260,11 +294,13 @@ func compileInstrSRA(c *compiler.Compiler, operands ...Place) error {
 	// SRA H	- Shift H right preserving sign
 	// SRA E	- Shift E right preserving sign
 	// SRA L	- Shift L right preserving sign
+	c.PushInstr("")
 	return nil
 }
 
 func compileInstrHALT(c *compiler.Compiler, operands ...Place) error {
 	// HALT 	- Halt processor
+	c.PlaceHalt()
 	return nil
 }
 
@@ -278,6 +314,7 @@ func compileInstrRL(c *compiler.Compiler, operands ...Place) error {
 	// RL D	- Rotate D left
 	// RL B	- Rotate B left
 	// RL H	- Rotate H left
+	c.PushInstr("")
 	return nil
 }
 
@@ -297,12 +334,12 @@ func compileInstrLDI(c *compiler.Compiler, operands ...Place) error {
 		return err
 	}
 	c.PushInstr(instr)
-
 	return nil
 }
 
 func compileInstrSTOP(c *compiler.Compiler, operands ...Place) error {
 	// STOP 	- Stop processor
+	c.PlaceHalt()
 	return nil
 }
 
@@ -321,6 +358,7 @@ func compileInstrADD(c *compiler.Compiler, operands ...Place) error {
 	// ADD HL, HL	- Add 16-bit HL to HL
 	// ADD A, (HL)	- Add value pointed by HL to A
 	// ADD A, D	- Add D to A
+	c.PushInstr("")
 	return nil
 }
 
@@ -333,6 +371,7 @@ func compileInstrRST(c *compiler.Compiler, operands ...Place) error {
 	// RST 20	- Call routine at address 0020h
 	// RST 38	- Call routine at address 0038h
 	// RST 0	- Call routine at address 0000h
+	c.PushInstr("")
 	return nil
 }
 
@@ -345,6 +384,7 @@ func compileInstrSRL(c *compiler.Compiler, operands ...Place) error {
 	// SRL C	- Shift C right
 	// SRL D	- Shift D right
 	// SRL L	- Shift L right
+	c.PushInstr("")
 	return nil
 }
 
@@ -358,6 +398,7 @@ func compileInstrSUB(c *compiler.Compiler, operands ...Place) error {
 	// SUB A, B	- Subtract B from A
 	// SUB A, L	- Subtract L from A
 	// SUB A, H	- Subtract H from A
+	c.PushInstr("")
 	return nil
 }
 
@@ -380,11 +421,30 @@ func compileInstrJP(c *compiler.Compiler, operands ...Place) error {
 	// JP NC, nn	- Absolute jump to 16-bit location if last result caused no carry
 	// JP nn	- Absolute jump to 16-bit location
 	// JP (HL)	- Jump to 16-bit value pointed by HL
-	return nil
+	var (
+		cond   compiler.Condition
+		target Place
+	)
+
+	if opCond, ok := operands[0].(CondOperand); ok {
+		cond = opCond.Condition
+		target = operands[1]
+	} else {
+		cond = compiler.CondAlways
+		target = operands[0]
+	}
+
+	addr, ok := target.(Immediate16)
+	if !ok {
+		return InvalidOperand{"JP", target, "a 16-bit immediate"}
+	}
+
+	return c.PlaceJump(cond, compiler.Address(addr))
 }
 
 func compileInstrDI(c *compiler.Compiler, operands ...Place) error {
 	// DI 	- DIsable interrupts
+	c.PushInstr("")
 	return nil
 }
 
@@ -401,6 +461,7 @@ func compileInstrINC(c *compiler.Compiler, operands ...Place) error {
 	// INC D	- Increment D
 	// INC HL	- Increment 16-bit HL
 	// INC A	- Increment A
+	c.PushInstr("")
 	return nil
 }
 
@@ -414,6 +475,7 @@ func compileInstrCP(c *compiler.Compiler, operands ...Place) error {
 	// CP L	- Compare L against A
 	// CP n	- Compare 8-bit immediate against A
 	// CP D	- Compare D against A
+	c.PushInstr("")
 	return nil
 }
 
@@ -423,6 +485,8 @@ func compileInstrRET(c *compiler.Compiler, operands ...Place) error {
 	// RET 	- Return to calling routine
 	// RET C	- Return if last result caused carry
 	// RET Z	- Return if last result was zero
+
+	c.PushInstr("")
 	return nil
 }
 
@@ -491,21 +555,25 @@ func compileInstrRES(c *compiler.Compiler, operands ...Place) error {
 	// RES 4, A	- Clear (reset) bit 4 of A
 	// RES 0, H	- Clear (reset) bit 0 of H
 	// RES 6, H	- Clear (reset) bit 6 of H
+	c.PushInstr("")
 	return nil
 }
 
 func compileInstrCCF(c *compiler.Compiler, operands ...Place) error {
 	// CCF 	- Clear carry flag
+	c.PushInstr("")
 	return nil
 }
 
 func compileInstrRETI(c *compiler.Compiler, operands ...Place) error {
 	// RETI 	- Enable interrupts and return to calling routine
+	c.PushInstr("")
 	return nil
 }
 
 func compileInstrNOP(c *compiler.Compiler, operands ...Place) error {
 	// NOP 	- No Operation
+	c.PushInstr("")
 	return nil
 }
 
@@ -574,6 +642,7 @@ func compileInstrBIT(c *compiler.Compiler, operands ...Place) error {
 	// BIT 3, (HL)	- Test bit 3 of value pointed by HL
 	// BIT 2, A	- Test bit 2 of A
 	// BIT 7, L	- Test bit 7 of L
+	c.PushInstr("")
 	return nil
 }
 
@@ -587,6 +656,7 @@ func compileInstrAND(c *compiler.Compiler, operands ...Place) error {
 	// AND A	- Logical AND A against A
 	// AND D	- Logical AND D against A
 	// AND (HL)	- Logical AND value pointed by HL against A
+	c.PushInstr("")
 	return nil
 }
 
@@ -594,6 +664,7 @@ func compileInstrLDH(c *compiler.Compiler, operands ...Place) error {
 	// LDH (n), A	- Save A at address pointed to by (FF00h + 8-bit immediate)
 	// LDH A, (n)	- Load A from address pointed to by (FF00h + 8-bit immediate)
 	// LDH (C), A	- Save A at address pointed to by (FF00h + C)
+	c.PushInstr("")
 	return nil
 }
 
@@ -690,6 +761,7 @@ func compileInstrLD(c *compiler.Compiler, operands ...Place) error {
 
 func compileInstrSCF(c *compiler.Compiler, operands ...Place) error {
 	// SCF 	- Set carry flag
+	c.PushInstr("")
 	return nil
 }
 
@@ -703,6 +775,7 @@ func compileInstrRLC(c *compiler.Compiler, operands ...Place) error {
 	// RLC C	- Rotate C left with carry
 	// RLC D	- Rotate D left with carry
 	// RLC B	- Rotate B left with carry
+	c.PushInstr("")
 	return nil
 }
 
@@ -715,11 +788,13 @@ func compileInstrSWAP(c *compiler.Compiler, operands ...Place) error {
 	// SWAP C	- Swap nybbles in C
 	// SWAP A	- Swap nybbles in A
 	// SWAP D	- Swap nybbles in D
+	c.PushInstr("")
 	return nil
 }
 
 func compileInstrCPL(c *compiler.Compiler, operands ...Place) error {
 	// CPL 	- Complement (logical NOT) on A
+	c.PushInstr("")
 	return nil
 }
 
@@ -736,6 +811,7 @@ func compileInstrDEC(c *compiler.Compiler, operands ...Place) error {
 	// DEC BC	- Decrement 16-bit BC
 	// DEC D	- Decrement D
 	// DEC H	- Decrement H
+	c.PushInstr("")
 	return nil
 }
 
@@ -745,6 +821,7 @@ func compileInstrCALL(c *compiler.Compiler, operands ...Place) error {
 	// CALL NZ, nn	- Call routine at 16-bit location if last result was not zero
 	// CALL nn	- Call routine at 16-bit location
 	// CALL NC, nn	- Call routine at 16-bit location if last result caused no carry
+	c.PushInstr("")
 	return nil
 }
 
@@ -758,11 +835,13 @@ func compileInstrSBC(c *compiler.Compiler, operands ...Place) error {
 	// SBC A, A	- Subtract A and carry flag from A
 	// SBC A, B	- Subtract B and carry flag from A
 	// SBC A, L	- Subtract and carry flag L from A
+	c.PushInstr("")
 	return nil
 }
 
 func compileInstrDAA(c *compiler.Compiler, operands ...Place) error {
 	// DAA 	- Adjust A for BCD addition
+	c.PushInstr("")
 	return nil
 }
 
@@ -776,6 +855,7 @@ func compileInstrRRC(c *compiler.Compiler, operands ...Place) error {
 	// RRC C	- Rotate C right with carry
 	// RRC D	- Rotate D right with carry
 	// RRC (HL)	- Rotate value pointed by HL right with carry
+	c.PushInstr("")
 	return nil
 }
 
@@ -844,6 +924,7 @@ func compileInstrSET(c *compiler.Compiler, operands ...Place) error {
 	// SET 0, H	- Set bit 0 of H
 	// SET 2, A	- Set bit 2 of A
 	// SET 4, B	- Set bit 4 of B
+	c.PushInstr("")
 	return nil
 }
 
@@ -853,7 +934,27 @@ func compileInstrJR(c *compiler.Compiler, operands ...Place) error {
 	// JR n	- Relative jump by signed immediate
 	// JR C, n	- Relative jump by signed immediate if last result caused carry
 	// JR NZ, n	- Relative jump by signed immediate if last result was not zero
-	return nil
+	var (
+		cond     compiler.Condition
+		offsetOp Place
+	)
+
+	if opCond, ok := operands[0].(CondOperand); ok {
+		cond = opCond.Condition
+		offsetOp = operands[1]
+	} else {
+		cond = compiler.CondAlways
+		offsetOp = operands[0]
+	}
+
+	offset, ok := offsetOp.(Immediate8)
+	if !ok {
+		return InvalidOperand{"JR", offsetOp, "an 8-bit immediate"}
+	}
+
+	// important: sign-retaining cast to signed!
+	addr := int16(c.Address()) + int16(offset)
+	return c.PlaceJump(cond, compiler.Address(addr))
 }
 
 func compileInstrRR(c *compiler.Compiler, operands ...Place) error {
@@ -866,12 +967,14 @@ func compileInstrRR(c *compiler.Compiler, operands ...Place) error {
 	// RR D	- Rotate D right
 	// RR H	- Rotate H right
 	// RR (HL)	- Rotate value pointed by HL right
+	c.PushInstr("")
 	return nil
 }
 
 func compileInstrLDD(c *compiler.Compiler, operands ...Place) error {
 	// LDD A, (HL)	- Load A from address pointed to by HL, and decrement HL
 	// LDD (HL), A	- Save A to address pointed by HL, and decrement HL
+	c.PushInstr("")
 	return nil
 }
 
@@ -885,6 +988,7 @@ func compileInstrADC(c *compiler.Compiler, operands ...Place) error {
 	// ADC A, D	- Add D and carry flag to A
 	// ADC A, E	- Add E and carry flag to A
 	// ADC A, B	- Add B and carry flag to A
+	c.PushInstr("")
 	return nil
 }
 
@@ -898,6 +1002,7 @@ func compileInstrXOR(c *compiler.Compiler, operands ...Place) error {
 	// XOR A	- Logical XOR A against A
 	// XOR D	- Logical XOR D against A
 	// XOR C	- Logical XOR C against A
+	c.PushInstr("")
 	return nil
 }
 
@@ -906,6 +1011,7 @@ func compileInstrPUSH(c *compiler.Compiler, operands ...Place) error {
 	// PUSH DE	- Push 16-bit DE onto stack
 	// PUSH HL	- Push 16-bit HL onto stack
 	// PUSH BC	- Push 16-bit BC onto stack
+	c.PushInstr("")
 	return nil
 }
 
@@ -914,11 +1020,13 @@ func compileInstrPOP(c *compiler.Compiler, operands ...Place) error {
 	// POP DE	- Pop 16-bit value from stack into DE
 	// POP BC	- Pop 16-bit value from stack into BC
 	// POP HL	- Pop 16-bit value from stack into HL
+	c.PushInstr("")
 	return nil
 }
 
 func compileInstrEI(c *compiler.Compiler, operands ...Place) error {
 	// EI 	- Enable interrupts
+	c.PushInstr("")
 	return nil
 }
 
@@ -935,6 +1043,7 @@ func compileInstrXX(c *compiler.Compiler, operands ...Place) error {
 	// XX 	- Operation removed in this CPU
 	// XX 	- Operation removed in this CPU
 	// XX 	- Operation removed in this CPU
+	c.PushInstr("")
 	return nil
 }
 
@@ -948,6 +1057,7 @@ func compileInstrOR(c *compiler.Compiler, operands ...Place) error {
 	// OR H	- Logical OR H against A
 	// OR (HL)	- Logical OR value pointed by HL against A
 	// OR B	- Logical OR B against A
+	c.PushInstr("")
 	return nil
 }
 
@@ -2315,7 +2425,7 @@ func (a Arch) CompileOpcode(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		return compileInstrJR(c, C, Immediate8(operands[0]))
+		return compileInstrJR(c, IfC, Immediate8(operands[0]))
 	case 0x39:
 		// ADD HL, SP
 		// Add 16-bit SP to HL
@@ -3120,7 +3230,7 @@ func (a Arch) CompileOpcode(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		return compileInstrLD(c, Immediate16(uint16(operands[1])<<8|uint16(operands[0])), A)
+		return compileInstrLD(c, IndirectImm(uint16(operands[1])<<8|uint16(operands[0])), A)
 	case 0xEB:
 		// XX
 		// Operation removed in this CPU
@@ -3209,7 +3319,7 @@ func (a Arch) CompileOpcode(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		return compileInstrLD(c, A, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
+		return compileInstrLD(c, A, IndirectImm(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xFB:
 		// EI
 		// Enable interrupts

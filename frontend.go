@@ -22,7 +22,7 @@ func main() {
 
 	romFile, err := os.Open(*romFilename)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "couldn't open rom: %s: %s\n", romFilename, err)
+		fmt.Fprintf(os.Stderr, "couldn't open rom: %s: %s\n", *romFilename, err)
 		return
 	}
 
