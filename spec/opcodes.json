@@ -1,0 +1,3880 @@
+{
+    "CB": {
+        "95": {
+            "Desc": "Clear (reset) bit 2 of L",
+            "Instr": "RES",
+            "Operands": [
+                "2",
+                "L"
+            ]
+        },
+        "F3": {
+            "Desc": "Set bit 6 of E",
+            "Instr": "SET",
+            "Operands": [
+                "6",
+                "E"
+            ]
+        },
+        "31": {
+            "Desc": "Swap nybbles in C",
+            "Instr": "SWAP",
+            "Operands": [
+                "C"
+            ]
+        },
+        "10": {
+            "Desc": "Rotate B left",
+            "Instr": "RL",
+            "Operands": [
+                "B"
+            ]
+        },
+        "8A": {
+            "Desc": "Clear (reset) bit 1 of D",
+            "Instr": "RES",
+            "Operands": [
+                "1",
+                "D"
+            ]
+        },
+        "00": {
+            "Desc": "Rotate B left with carry",
+            "Instr": "RLC",
+            "Operands": [
+                "B"
+            ]
+        },
+        "A1": {
+            "Desc": "Clear (reset) bit 4 of C",
+            "Instr": "RES",
+            "Operands": [
+                "4",
+                "C"
+            ]
+        },
+        "60": {
+            "Desc": "Test bit 4 of B",
+            "Instr": "BIT",
+            "Operands": [
+                "4",
+                "B"
+            ]
+        },
+        "81": {
+            "Desc": "Clear (reset) bit 0 of C",
+            "Instr": "RES",
+            "Operands": [
+                "0",
+                "C"
+            ]
+        },
+        "4B": {
+            "Desc": "Test bit 1 of E",
+            "Instr": "BIT",
+            "Operands": [
+                "1",
+                "E"
+            ]
+        },
+        "43": {
+            "Desc": "Test bit 0 of E",
+            "Instr": "BIT",
+            "Operands": [
+                "0",
+                "E"
+            ]
+        },
+        "39": {
+            "Desc": "Shift C right",
+            "Instr": "SRL",
+            "Operands": [
+                "C"
+            ]
+        },
+        "CD": {
+            "Desc": "Set bit 1 of L",
+            "Instr": "SET",
+            "Operands": [
+                "1",
+                "L"
+            ]
+        },
+        "08": {
+            "Desc": "Rotate B right with carry",
+            "Instr": "RRC",
+            "Operands": [
+                "B"
+            ]
+        },
+        "0C": {
+            "Desc": "Rotate H right with carry",
+            "Instr": "RRC",
+            "Operands": [
+                "H"
+            ]
+        },
+        "ED": {
+            "Desc": "Set bit 5 of L",
+            "Instr": "SET",
+            "Operands": [
+                "5",
+                "L"
+            ]
+        },
+        "4F": {
+            "Desc": "Test bit 1 of A",
+            "Instr": "BIT",
+            "Operands": [
+                "1",
+                "A"
+            ]
+        },
+        "1F": {
+            "Desc": "Rotate A right",
+            "Instr": "RR",
+            "Operands": [
+                "A"
+            ]
+        },
+        "67": {
+            "Desc": "Test bit 4 of A",
+            "Instr": "BIT",
+            "Operands": [
+                "4",
+                "A"
+            ]
+        },
+        "BC": {
+            "Desc": "Clear (reset) bit 7 of H",
+            "Instr": "RES",
+            "Operands": [
+                "7",
+                "H"
+            ]
+        },
+        "B4": {
+            "Desc": "Clear (reset) bit 6 of H",
+            "Instr": "RES",
+            "Operands": [
+                "6",
+                "H"
+            ]
+        },
+        "3D": {
+            "Desc": "Shift L right",
+            "Instr": "SRL",
+            "Operands": [
+                "L"
+            ]
+        },
+        "96": {
+            "Desc": "Clear (reset) bit 2 of value pointed by HL",
+            "Instr": "RES",
+            "Operands": [
+                "2",
+                "(HL)"
+            ]
+        },
+        "C5": {
+            "Desc": "Set bit 0 of L",
+            "Instr": "SET",
+            "Operands": [
+                "0",
+                "L"
+            ]
+        },
+        "0E": {
+            "Desc": "Rotate value pointed by HL right with carry",
+            "Instr": "RRC",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "30": {
+            "Desc": "Swap nybbles in B",
+            "Instr": "SWAP",
+            "Operands": [
+                "B"
+            ]
+        },
+        "36": {
+            "Desc": "Swap nybbles in value pointed by HL",
+            "Instr": "SWAP",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "7F": {
+            "Desc": "Test bit 7 of A",
+            "Instr": "BIT",
+            "Operands": [
+                "7",
+                "A"
+            ]
+        },
+        "14": {
+            "Desc": "Rotate H left",
+            "Instr": "RL",
+            "Operands": [
+                "H"
+            ]
+        },
+        "E9": {
+            "Desc": "Set bit 5 of C",
+            "Instr": "SET",
+            "Operands": [
+                "5",
+                "C"
+            ]
+        },
+        "D3": {
+            "Desc": "Set bit 2 of E",
+            "Instr": "SET",
+            "Operands": [
+                "2",
+                "E"
+            ]
+        },
+        "DD": {
+            "Desc": "Set bit 3 of L",
+            "Instr": "SET",
+            "Operands": [
+                "3",
+                "L"
+            ]
+        },
+        "E3": {
+            "Desc": "Set bit 4 of E",
+            "Instr": "SET",
+            "Operands": [
+                "4",
+                "E"
+            ]
+        },
+        "AA": {
+            "Desc": "Clear (reset) bit 5 of D",
+            "Instr": "RES",
+            "Operands": [
+                "5",
+                "D"
+            ]
+        },
+        "6F": {
+            "Desc": "Test bit 5 of A",
+            "Instr": "BIT",
+            "Operands": [
+                "5",
+                "A"
+            ]
+        },
+        "D2": {
+            "Desc": "Set bit 2 of D",
+            "Instr": "SET",
+            "Operands": [
+                "2",
+                "D"
+            ]
+        },
+        "17": {
+            "Desc": "Rotate A left",
+            "Instr": "RL",
+            "Operands": [
+                "A"
+            ]
+        },
+        "D8": {
+            "Desc": "Set bit 3 of B",
+            "Instr": "SET",
+            "Operands": [
+                "3",
+                "B"
+            ]
+        },
+        "38": {
+            "Desc": "Shift B right",
+            "Instr": "SRL",
+            "Operands": [
+                "B"
+            ]
+        },
+        "1A": {
+            "Desc": "Rotate D right",
+            "Instr": "RR",
+            "Operands": [
+                "D"
+            ]
+        },
+        "37": {
+            "Desc": "Swap nybbles in A",
+            "Instr": "SWAP",
+            "Operands": [
+                "A"
+            ]
+        },
+        "D5": {
+            "Desc": "Set bit 2 of L",
+            "Instr": "SET",
+            "Operands": [
+                "2",
+                "L"
+            ]
+        },
+        "D6": {
+            "Desc": "Set bit 2 of value pointed by HL",
+            "Instr": "SET",
+            "Operands": [
+                "2",
+                "(HL)"
+            ]
+        },
+        "58": {
+            "Desc": "Test bit 3 of B",
+            "Instr": "BIT",
+            "Operands": [
+                "3",
+                "B"
+            ]
+        },
+        "A6": {
+            "Desc": "Clear (reset) bit 4 of value pointed by HL",
+            "Instr": "RES",
+            "Operands": [
+                "4",
+                "(HL)"
+            ]
+        },
+        "D1": {
+            "Desc": "Set bit 2 of C",
+            "Instr": "SET",
+            "Operands": [
+                "2",
+                "C"
+            ]
+        },
+        "5F": {
+            "Desc": "Test bit 3 of A",
+            "Instr": "BIT",
+            "Operands": [
+                "3",
+                "A"
+            ]
+        },
+        "2D": {
+            "Desc": "Shift L right preserving sign",
+            "Instr": "SRA",
+            "Operands": [
+                "L"
+            ]
+        },
+        "34": {
+            "Desc": "Swap nybbles in H",
+            "Instr": "SWAP",
+            "Operands": [
+                "H"
+            ]
+        },
+        "02": {
+            "Desc": "Rotate D left with carry",
+            "Instr": "RLC",
+            "Operands": [
+                "D"
+            ]
+        },
+        "0A": {
+            "Desc": "Rotate D right with carry",
+            "Instr": "RRC",
+            "Operands": [
+                "D"
+            ]
+        },
+        "2E": {
+            "Desc": "Shift value pointed by HL right preserving sign",
+            "Instr": "SRA",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "C3": {
+            "Desc": "Set bit 0 of E",
+            "Instr": "SET",
+            "Operands": [
+                "0",
+                "E"
+            ]
+        },
+        "E6": {
+            "Desc": "Set bit 4 of value pointed by HL",
+            "Instr": "SET",
+            "Operands": [
+                "4",
+                "(HL)"
+            ]
+        },
+        "50": {
+            "Desc": "Test bit 2 of B",
+            "Instr": "BIT",
+            "Operands": [
+                "2",
+                "B"
+            ]
+        },
+        "F8": {
+            "Desc": "Set bit 7 of B",
+            "Instr": "SET",
+            "Operands": [
+                "7",
+                "B"
+            ]
+        },
+        "8D": {
+            "Desc": "Clear (reset) bit 1 of L",
+            "Instr": "RES",
+            "Operands": [
+                "1",
+                "L"
+            ]
+        },
+        "C7": {
+            "Desc": "Set bit 0 of A",
+            "Instr": "SET",
+            "Operands": [
+                "0",
+                "A"
+            ]
+        },
+        "9B": {
+            "Desc": "Clear (reset) bit 3 of E",
+            "Instr": "RES",
+            "Operands": [
+                "3",
+                "E"
+            ]
+        },
+        "74": {
+            "Desc": "Test bit 6 of H",
+            "Instr": "BIT",
+            "Operands": [
+                "6",
+                "H"
+            ]
+        },
+        "F9": {
+            "Desc": "Set bit 7 of C",
+            "Instr": "SET",
+            "Operands": [
+                "7",
+                "C"
+            ]
+        },
+        "44": {
+            "Desc": "Test bit 0 of H",
+            "Instr": "BIT",
+            "Operands": [
+                "0",
+                "H"
+            ]
+        },
+        "D7": {
+            "Desc": "Set bit 2 of A",
+            "Instr": "SET",
+            "Operands": [
+                "2",
+                "A"
+            ]
+        },
+        "3E": {
+            "Desc": "Shift value pointed by HL right",
+            "Instr": "SRL",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "28": {
+            "Desc": "Shift B right preserving sign",
+            "Instr": "SRA",
+            "Operands": [
+                "B"
+            ]
+        },
+        "E0": {
+            "Desc": "Set bit 4 of B",
+            "Instr": "SET",
+            "Operands": [
+                "4",
+                "B"
+            ]
+        },
+        "3F": {
+            "Desc": "Shift A right",
+            "Instr": "SRL",
+            "Operands": [
+                "A"
+            ]
+        },
+        "A0": {
+            "Desc": "Clear (reset) bit 4 of B",
+            "Instr": "RES",
+            "Operands": [
+                "4",
+                "B"
+            ]
+        },
+        "2F": {
+            "Desc": "Shift A right preserving sign",
+            "Instr": "SRA",
+            "Operands": [
+                "A"
+            ]
+        },
+        "D4": {
+            "Desc": "Set bit 2 of H",
+            "Instr": "SET",
+            "Operands": [
+                "2",
+                "H"
+            ]
+        },
+        "3B": {
+            "Desc": "Shift E right",
+            "Instr": "SRL",
+            "Operands": [
+                "E"
+            ]
+        },
+        "49": {
+            "Desc": "Test bit 1 of C",
+            "Instr": "BIT",
+            "Operands": [
+                "1",
+                "C"
+            ]
+        },
+        "FF": {
+            "Desc": "Set bit 7 of A",
+            "Instr": "SET",
+            "Operands": [
+                "7",
+                "A"
+            ]
+        },
+        "C0": {
+            "Desc": "Set bit 0 of B",
+            "Instr": "SET",
+            "Operands": [
+                "0",
+                "B"
+            ]
+        },
+        "A2": {
+            "Desc": "Clear (reset) bit 4 of D",
+            "Instr": "RES",
+            "Operands": [
+                "4",
+                "D"
+            ]
+        },
+        "DF": {
+            "Desc": "Set bit 3 of A",
+            "Instr": "SET",
+            "Operands": [
+                "3",
+                "A"
+            ]
+        },
+        "EB": {
+            "Desc": "Set bit 5 of E",
+            "Instr": "SET",
+            "Operands": [
+                "5",
+                "E"
+            ]
+        },
+        "E2": {
+            "Desc": "Set bit 4 of D",
+            "Instr": "SET",
+            "Operands": [
+                "4",
+                "D"
+            ]
+        },
+        "C8": {
+            "Desc": "Set bit 1 of B",
+            "Instr": "SET",
+            "Operands": [
+                "1",
+                "B"
+            ]
+        },
+        "AC": {
+            "Desc": "Clear (reset) bit 5 of H",
+            "Instr": "RES",
+            "Operands": [
+                "5",
+                "H"
+            ]
+        },
+        "7E": {
+            "Desc": "Test bit 7 of value pointed by HL",
+            "Instr": "BIT",
+            "Operands": [
+                "7",
+                "(HL)"
+            ]
+        },
+        "57": {
+            "Desc": "Test bit 2 of A",
+            "Instr": "BIT",
+            "Operands": [
+                "2",
+                "A"
+            ]
+        },
+        "88": {
+            "Desc": "Clear (reset) bit 1 of B",
+            "Instr": "RES",
+            "Operands": [
+                "1",
+                "B"
+            ]
+        },
+        "F2": {
+            "Desc": "Set bit 6 of D",
+            "Instr": "SET",
+            "Operands": [
+                "6",
+                "D"
+            ]
+        },
+        "32": {
+            "Desc": "Swap nybbles in D",
+            "Instr": "SWAP",
+            "Operands": [
+                "D"
+            ]
+        },
+        "71": {
+            "Desc": "Test bit 6 of C",
+            "Instr": "BIT",
+            "Operands": [
+                "6",
+                "C"
+            ]
+        },
+        "91": {
+            "Desc": "Clear (reset) bit 2 of C",
+            "Instr": "RES",
+            "Operands": [
+                "2",
+                "C"
+            ]
+        },
+        "CF": {
+            "Desc": "Set bit 1 of A",
+            "Instr": "SET",
+            "Operands": [
+                "1",
+                "A"
+            ]
+        },
+        "B3": {
+            "Desc": "Clear (reset) bit 6 of E",
+            "Instr": "RES",
+            "Operands": [
+                "6",
+                "E"
+            ]
+        },
+        "68": {
+            "Desc": "Test bit 5 of B",
+            "Instr": "BIT",
+            "Operands": [
+                "5",
+                "B"
+            ]
+        },
+        "16": {
+            "Desc": "Rotate value pointed by HL left",
+            "Instr": "RL",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "6E": {
+            "Desc": "Test bit 5 of value pointed by HL",
+            "Instr": "BIT",
+            "Operands": [
+                "5",
+                "(HL)"
+            ]
+        },
+        "62": {
+            "Desc": "Test bit 4 of D",
+            "Instr": "BIT",
+            "Operands": [
+                "4",
+                "D"
+            ]
+        },
+        "EA": {
+            "Desc": "Set bit 5 of D",
+            "Instr": "SET",
+            "Operands": [
+                "5",
+                "D"
+            ]
+        },
+        "CC": {
+            "Desc": "Set bit 1 of H",
+            "Instr": "SET",
+            "Operands": [
+                "1",
+                "H"
+            ]
+        },
+        "63": {
+            "Desc": "Test bit 4 of E",
+            "Instr": "BIT",
+            "Operands": [
+                "4",
+                "E"
+            ]
+        },
+        "F0": {
+            "Desc": "Set bit 6 of B",
+            "Instr": "SET",
+            "Operands": [
+                "6",
+                "B"
+            ]
+        },
+        "3A": {
+            "Desc": "Shift D right",
+            "Instr": "SRL",
+            "Operands": [
+                "D"
+            ]
+        },
+        "C1": {
+            "Desc": "Set bit 0 of C",
+            "Instr": "SET",
+            "Operands": [
+                "0",
+                "C"
+            ]
+        },
+        "82": {
+            "Desc": "Clear (reset) bit 0 of D",
+            "Instr": "RES",
+            "Operands": [
+                "0",
+                "D"
+            ]
+        },
+        "51": {
+            "Desc": "Test bit 2 of C",
+            "Instr": "BIT",
+            "Operands": [
+                "2",
+                "C"
+            ]
+        },
+        "8E": {
+            "Desc": "Clear (reset) bit 1 of value pointed by HL",
+            "Instr": "RES",
+            "Operands": [
+                "1",
+                "(HL)"
+            ]
+        },
+        "BF": {
+            "Desc": "Clear (reset) bit 7 of A",
+            "Instr": "RES",
+            "Operands": [
+                "7",
+                "A"
+            ]
+        },
+        "0D": {
+            "Desc": "Rotate L right with carry",
+            "Instr": "RRC",
+            "Operands": [
+                "L"
+            ]
+        },
+        "DB": {
+            "Desc": "Set bit 3 of E",
+            "Instr": "SET",
+            "Operands": [
+                "3",
+                "E"
+            ]
+        },
+        "8C": {
+            "Desc": "Clear (reset) bit 1 of H",
+            "Instr": "RES",
+            "Operands": [
+                "1",
+                "H"
+            ]
+        },
+        "2B": {
+            "Desc": "Shift E right preserving sign",
+            "Instr": "SRA",
+            "Operands": [
+                "E"
+            ]
+        },
+        "AE": {
+            "Desc": "Clear (reset) bit 5 of value pointed by HL",
+            "Instr": "RES",
+            "Operands": [
+                "5",
+                "(HL)"
+            ]
+        },
+        "1E": {
+            "Desc": "Rotate value pointed by HL right",
+            "Instr": "RR",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "FB": {
+            "Desc": "Set bit 7 of E",
+            "Instr": "SET",
+            "Operands": [
+                "7",
+                "E"
+            ]
+        },
+        "52": {
+            "Desc": "Test bit 2 of D",
+            "Instr": "BIT",
+            "Operands": [
+                "2",
+                "D"
+            ]
+        },
+        "CB": {
+            "Desc": "Set bit 1 of E",
+            "Instr": "SET",
+            "Operands": [
+                "1",
+                "E"
+            ]
+        },
+        "25": {
+            "Desc": "Shift L left preserving sign",
+            "Instr": "SLA",
+            "Operands": [
+                "L"
+            ]
+        },
+        "92": {
+            "Desc": "Clear (reset) bit 2 of D",
+            "Instr": "RES",
+            "Operands": [
+                "2",
+                "D"
+            ]
+        },
+        "78": {
+            "Desc": "Test bit 7 of B",
+            "Instr": "BIT",
+            "Operands": [
+                "7",
+                "B"
+            ]
+        },
+        "3C": {
+            "Desc": "Shift H right",
+            "Instr": "SRL",
+            "Operands": [
+                "H"
+            ]
+        },
+        "BB": {
+            "Desc": "Clear (reset) bit 7 of E",
+            "Instr": "RES",
+            "Operands": [
+                "7",
+                "E"
+            ]
+        },
+        "93": {
+            "Desc": "Clear (reset) bit 2 of E",
+            "Instr": "RES",
+            "Operands": [
+                "2",
+                "E"
+            ]
+        },
+        "BD": {
+            "Desc": "Clear (reset) bit 7 of L",
+            "Instr": "RES",
+            "Operands": [
+                "7",
+                "L"
+            ]
+        },
+        "C6": {
+            "Desc": "Set bit 0 of value pointed by HL",
+            "Instr": "SET",
+            "Operands": [
+                "0",
+                "(HL)"
+            ]
+        },
+        "59": {
+            "Desc": "Test bit 3 of C",
+            "Instr": "BIT",
+            "Operands": [
+                "3",
+                "C"
+            ]
+        },
+        "79": {
+            "Desc": "Test bit 7 of C",
+            "Instr": "BIT",
+            "Operands": [
+                "7",
+                "C"
+            ]
+        },
+        "12": {
+            "Desc": "Rotate D left",
+            "Instr": "RL",
+            "Operands": [
+                "D"
+            ]
+        },
+        "41": {
+            "Desc": "Test bit 0 of C",
+            "Instr": "BIT",
+            "Operands": [
+                "0",
+                "C"
+            ]
+        },
+        "B7": {
+            "Desc": "Clear (reset) bit 6 of A",
+            "Instr": "RES",
+            "Operands": [
+                "6",
+                "A"
+            ]
+        },
+        "76": {
+            "Desc": "Test bit 6 of value pointed by HL",
+            "Instr": "BIT",
+            "Operands": [
+                "6",
+                "(HL)"
+            ]
+        },
+        "F7": {
+            "Desc": "Set bit 6 of A",
+            "Instr": "SET",
+            "Operands": [
+                "6",
+                "A"
+            ]
+        },
+        "05": {
+            "Desc": "Rotate L left with carry",
+            "Instr": "RLC",
+            "Operands": [
+                "L"
+            ]
+        },
+        "5A": {
+            "Desc": "Test bit 3 of D",
+            "Instr": "BIT",
+            "Operands": [
+                "3",
+                "D"
+            ]
+        },
+        "1D": {
+            "Desc": "Rotate L right",
+            "Instr": "RR",
+            "Operands": [
+                "L"
+            ]
+        },
+        "B0": {
+            "Desc": "Clear (reset) bit 6 of B",
+            "Instr": "RES",
+            "Operands": [
+                "6",
+                "B"
+            ]
+        },
+        "15": {
+            "Desc": "Rotate L left",
+            "Instr": "RL",
+            "Operands": [
+                "L"
+            ]
+        },
+        "5B": {
+            "Desc": "Test bit 3 of E",
+            "Instr": "BIT",
+            "Operands": [
+                "3",
+                "E"
+            ]
+        },
+        "06": {
+            "Desc": "Rotate value pointed by HL left with carry",
+            "Instr": "RLC",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "AF": {
+            "Desc": "Clear (reset) bit 5 of A",
+            "Instr": "RES",
+            "Operands": [
+                "5",
+                "A"
+            ]
+        },
+        "8B": {
+            "Desc": "Clear (reset) bit 1 of E",
+            "Instr": "RES",
+            "Operands": [
+                "1",
+                "E"
+            ]
+        },
+        "D9": {
+            "Desc": "Set bit 3 of C",
+            "Instr": "SET",
+            "Operands": [
+                "3",
+                "C"
+            ]
+        },
+        "C4": {
+            "Desc": "Set bit 0 of H",
+            "Instr": "SET",
+            "Operands": [
+                "0",
+                "H"
+            ]
+        },
+        "B5": {
+            "Desc": "Clear (reset) bit 6 of L",
+            "Instr": "RES",
+            "Operands": [
+                "6",
+                "L"
+            ]
+        },
+        "C9": {
+            "Desc": "Set bit 1 of C",
+            "Instr": "SET",
+            "Operands": [
+                "1",
+                "C"
+            ]
+        },
+        "99": {
+            "Desc": "Clear (reset) bit 3 of C",
+            "Instr": "RES",
+            "Operands": [
+                "3",
+                "C"
+            ]
+        },
+        "07": {
+            "Desc": "Rotate A left with carry",
+            "Instr": "RLC",
+            "Operands": [
+                "A"
+            ]
+        },
+        "40": {
+            "Desc": "Test bit 0 of B",
+            "Instr": "BIT",
+            "Operands": [
+                "0",
+                "B"
+            ]
+        },
+        "13": {
+            "Desc": "Rotate E left",
+            "Instr": "RL",
+            "Operands": [
+                "E"
+            ]
+        },
+        "77": {
+            "Desc": "Test bit 6 of A",
+            "Instr": "BIT",
+            "Operands": [
+                "6",
+                "A"
+            ]
+        },
+        "18": {
+            "Desc": "Rotate B right",
+            "Instr": "RR",
+            "Operands": [
+                "B"
+            ]
+        },
+        "94": {
+            "Desc": "Clear (reset) bit 2 of H",
+            "Instr": "RES",
+            "Operands": [
+                "2",
+                "H"
+            ]
+        },
+        "1C": {
+            "Desc": "Rotate H right",
+            "Instr": "RR",
+            "Operands": [
+                "H"
+            ]
+        },
+        "4A": {
+            "Desc": "Test bit 1 of D",
+            "Instr": "BIT",
+            "Operands": [
+                "1",
+                "D"
+            ]
+        },
+        "7B": {
+            "Desc": "Test bit 7 of E",
+            "Instr": "BIT",
+            "Operands": [
+                "7",
+                "E"
+            ]
+        },
+        "42": {
+            "Desc": "Test bit 0 of D",
+            "Instr": "BIT",
+            "Operands": [
+                "0",
+                "D"
+            ]
+        },
+        "53": {
+            "Desc": "Test bit 2 of E",
+            "Instr": "BIT",
+            "Operands": [
+                "2",
+                "E"
+            ]
+        },
+        "09": {
+            "Desc": "Rotate C right with carry",
+            "Instr": "RRC",
+            "Operands": [
+                "C"
+            ]
+        },
+        "9F": {
+            "Desc": "Clear (reset) bit 3 of A",
+            "Instr": "RES",
+            "Operands": [
+                "3",
+                "A"
+            ]
+        },
+        "AD": {
+            "Desc": "Clear (reset) bit 5 of L",
+            "Instr": "RES",
+            "Operands": [
+                "5",
+                "L"
+            ]
+        },
+        "54": {
+            "Desc": "Test bit 2 of H",
+            "Instr": "BIT",
+            "Operands": [
+                "2",
+                "H"
+            ]
+        },
+        "98": {
+            "Desc": "Clear (reset) bit 3 of B",
+            "Instr": "RES",
+            "Operands": [
+                "3",
+                "B"
+            ]
+        },
+        "A7": {
+            "Desc": "Clear (reset) bit 4 of A",
+            "Instr": "RES",
+            "Operands": [
+                "4",
+                "A"
+            ]
+        },
+        "E1": {
+            "Desc": "Set bit 4 of C",
+            "Instr": "SET",
+            "Operands": [
+                "4",
+                "C"
+            ]
+        },
+        "7A": {
+            "Desc": "Test bit 7 of D",
+            "Instr": "BIT",
+            "Operands": [
+                "7",
+                "D"
+            ]
+        },
+        "F1": {
+            "Desc": "Set bit 6 of C",
+            "Instr": "SET",
+            "Operands": [
+                "6",
+                "C"
+            ]
+        },
+        "26": {
+            "Desc": "Shift value pointed by HL left preserving sign",
+            "Instr": "SLA",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "E8": {
+            "Desc": "Set bit 5 of B",
+            "Instr": "SET",
+            "Operands": [
+                "5",
+                "B"
+            ]
+        },
+        "B1": {
+            "Desc": "Clear (reset) bit 6 of C",
+            "Instr": "RES",
+            "Operands": [
+                "6",
+                "C"
+            ]
+        },
+        "56": {
+            "Desc": "Test bit 2 of value pointed by HL",
+            "Instr": "BIT",
+            "Operands": [
+                "2",
+                "(HL)"
+            ]
+        },
+        "2A": {
+            "Desc": "Shift D right preserving sign",
+            "Instr": "SRA",
+            "Operands": [
+                "D"
+            ]
+        },
+        "B6": {
+            "Desc": "Clear (reset) bit 6 of value pointed by HL",
+            "Instr": "RES",
+            "Operands": [
+                "6",
+                "(HL)"
+            ]
+        },
+        "5E": {
+            "Desc": "Test bit 3 of value pointed by HL",
+            "Instr": "BIT",
+            "Operands": [
+                "3",
+                "(HL)"
+            ]
+        },
+        "DA": {
+            "Desc": "Set bit 3 of D",
+            "Instr": "SET",
+            "Operands": [
+                "3",
+                "D"
+            ]
+        },
+        "83": {
+            "Desc": "Clear (reset) bit 0 of E",
+            "Instr": "RES",
+            "Operands": [
+                "0",
+                "E"
+            ]
+        },
+        "86": {
+            "Desc": "Clear (reset) bit 0 of value pointed by HL",
+            "Instr": "RES",
+            "Operands": [
+                "0",
+                "(HL)"
+            ]
+        },
+        "A9": {
+            "Desc": "Clear (reset) bit 5 of C",
+            "Instr": "RES",
+            "Operands": [
+                "5",
+                "C"
+            ]
+        },
+        "7D": {
+            "Desc": "Test bit 7 of L",
+            "Instr": "BIT",
+            "Operands": [
+                "7",
+                "L"
+            ]
+        },
+        "0F": {
+            "Desc": "Rotate A right with carry",
+            "Instr": "RRC",
+            "Operands": [
+                "A"
+            ]
+        },
+        "89": {
+            "Desc": "Clear (reset) bit 1 of C",
+            "Instr": "RES",
+            "Operands": [
+                "1",
+                "C"
+            ]
+        },
+        "33": {
+            "Desc": "Swap nybbles in E",
+            "Instr": "SWAP",
+            "Operands": [
+                "E"
+            ]
+        },
+        "8F": {
+            "Desc": "Clear (reset) bit 1 of A",
+            "Instr": "RES",
+            "Operands": [
+                "1",
+                "A"
+            ]
+        },
+        "04": {
+            "Desc": "Rotate H left with carry",
+            "Instr": "RLC",
+            "Operands": [
+                "H"
+            ]
+        },
+        "F4": {
+            "Desc": "Set bit 6 of H",
+            "Instr": "SET",
+            "Operands": [
+                "6",
+                "H"
+            ]
+        },
+        "11": {
+            "Desc": "Rotate C left",
+            "Instr": "RL",
+            "Operands": [
+                "C"
+            ]
+        },
+        "2C": {
+            "Desc": "Shift H right preserving sign",
+            "Instr": "SRA",
+            "Operands": [
+                "H"
+            ]
+        },
+        "FA": {
+            "Desc": "Set bit 7 of D",
+            "Instr": "SET",
+            "Operands": [
+                "7",
+                "D"
+            ]
+        },
+        "9C": {
+            "Desc": "Clear (reset) bit 3 of H",
+            "Instr": "RES",
+            "Operands": [
+                "3",
+                "H"
+            ]
+        },
+        "80": {
+            "Desc": "Clear (reset) bit 0 of B",
+            "Instr": "RES",
+            "Operands": [
+                "0",
+                "B"
+            ]
+        },
+        "0B": {
+            "Desc": "Rotate E right with carry",
+            "Instr": "RRC",
+            "Operands": [
+                "E"
+            ]
+        },
+        "48": {
+            "Desc": "Test bit 1 of B",
+            "Instr": "BIT",
+            "Operands": [
+                "1",
+                "B"
+            ]
+        },
+        "9E": {
+            "Desc": "Clear (reset) bit 3 of value pointed by HL",
+            "Instr": "RES",
+            "Operands": [
+                "3",
+                "(HL)"
+            ]
+        },
+        "EC": {
+            "Desc": "Set bit 5 of H",
+            "Instr": "SET",
+            "Operands": [
+                "5",
+                "H"
+            ]
+        },
+        "EE": {
+            "Desc": "Set bit 5 of value pointed by HL",
+            "Instr": "SET",
+            "Operands": [
+                "5",
+                "(HL)"
+            ]
+        },
+        "6B": {
+            "Desc": "Test bit 5 of E",
+            "Instr": "BIT",
+            "Operands": [
+                "5",
+                "E"
+            ]
+        },
+        "FD": {
+            "Desc": "Set bit 7 of L",
+            "Instr": "SET",
+            "Operands": [
+                "7",
+                "L"
+            ]
+        },
+        "A8": {
+            "Desc": "Clear (reset) bit 5 of B",
+            "Instr": "RES",
+            "Operands": [
+                "5",
+                "B"
+            ]
+        },
+        "FE": {
+            "Desc": "Set bit 7 of value pointed by HL",
+            "Instr": "SET",
+            "Operands": [
+                "7",
+                "(HL)"
+            ]
+        },
+        "E5": {
+            "Desc": "Set bit 4 of L",
+            "Instr": "SET",
+            "Operands": [
+                "4",
+                "L"
+            ]
+        },
+        "E7": {
+            "Desc": "Set bit 4 of A",
+            "Instr": "SET",
+            "Operands": [
+                "4",
+                "A"
+            ]
+        },
+        "72": {
+            "Desc": "Test bit 6 of D",
+            "Instr": "BIT",
+            "Operands": [
+                "6",
+                "D"
+            ]
+        },
+        "20": {
+            "Desc": "Shift B left preserving sign",
+            "Instr": "SLA",
+            "Operands": [
+                "B"
+            ]
+        },
+        "84": {
+            "Desc": "Clear (reset) bit 0 of H",
+            "Instr": "RES",
+            "Operands": [
+                "0",
+                "H"
+            ]
+        },
+        "DC": {
+            "Desc": "Set bit 3 of H",
+            "Instr": "SET",
+            "Operands": [
+                "3",
+                "H"
+            ]
+        },
+        "A3": {
+            "Desc": "Clear (reset) bit 4 of E",
+            "Instr": "RES",
+            "Operands": [
+                "4",
+                "E"
+            ]
+        },
+        "4C": {
+            "Desc": "Test bit 1 of H",
+            "Instr": "BIT",
+            "Operands": [
+                "1",
+                "H"
+            ]
+        },
+        "97": {
+            "Desc": "Clear (reset) bit 2 of A",
+            "Instr": "RES",
+            "Operands": [
+                "2",
+                "A"
+            ]
+        },
+        "4E": {
+            "Desc": "Test bit 1 of value pointed by HL",
+            "Instr": "BIT",
+            "Operands": [
+                "1",
+                "(HL)"
+            ]
+        },
+        "24": {
+            "Desc": "Shift H left preserving sign",
+            "Instr": "SLA",
+            "Operands": [
+                "H"
+            ]
+        },
+        "CA": {
+            "Desc": "Set bit 1 of D",
+            "Instr": "SET",
+            "Operands": [
+                "1",
+                "D"
+            ]
+        },
+        "22": {
+            "Desc": "Shift D left preserving sign",
+            "Instr": "SLA",
+            "Operands": [
+                "D"
+            ]
+        },
+        "AB": {
+            "Desc": "Clear (reset) bit 5 of E",
+            "Instr": "RES",
+            "Operands": [
+                "5",
+                "E"
+            ]
+        },
+        "5D": {
+            "Desc": "Test bit 3 of L",
+            "Instr": "BIT",
+            "Operands": [
+                "3",
+                "L"
+            ]
+        },
+        "23": {
+            "Desc": "Shift E left preserving sign",
+            "Instr": "SLA",
+            "Operands": [
+                "E"
+            ]
+        },
+        "F5": {
+            "Desc": "Set bit 6 of L",
+            "Instr": "SET",
+            "Operands": [
+                "6",
+                "L"
+            ]
+        },
+        "A4": {
+            "Desc": "Clear (reset) bit 4 of H",
+            "Instr": "RES",
+            "Operands": [
+                "4",
+                "H"
+            ]
+        },
+        "64": {
+            "Desc": "Test bit 4 of H",
+            "Instr": "BIT",
+            "Operands": [
+                "4",
+                "H"
+            ]
+        },
+        "9A": {
+            "Desc": "Clear (reset) bit 3 of D",
+            "Instr": "RES",
+            "Operands": [
+                "3",
+                "D"
+            ]
+        },
+        "73": {
+            "Desc": "Test bit 6 of E",
+            "Instr": "BIT",
+            "Operands": [
+                "6",
+                "E"
+            ]
+        },
+        "47": {
+            "Desc": "Test bit 0 of A",
+            "Instr": "BIT",
+            "Operands": [
+                "0",
+                "A"
+            ]
+        },
+        "6A": {
+            "Desc": "Test bit 5 of D",
+            "Instr": "BIT",
+            "Operands": [
+                "5",
+                "D"
+            ]
+        },
+        "C2": {
+            "Desc": "Set bit 0 of D",
+            "Instr": "SET",
+            "Operands": [
+                "0",
+                "D"
+            ]
+        },
+        "9D": {
+            "Desc": "Clear (reset) bit 3 of L",
+            "Instr": "RES",
+            "Operands": [
+                "3",
+                "L"
+            ]
+        },
+        "21": {
+            "Desc": "Shift C left preserving sign",
+            "Instr": "SLA",
+            "Operands": [
+                "C"
+            ]
+        },
+        "BE": {
+            "Desc": "Clear (reset) bit 7 of value pointed by HL",
+            "Instr": "RES",
+            "Operands": [
+                "7",
+                "(HL)"
+            ]
+        },
+        "27": {
+            "Desc": "Shift A left preserving sign",
+            "Instr": "SLA",
+            "Operands": [
+                "A"
+            ]
+        },
+        "85": {
+            "Desc": "Clear (reset) bit 0 of L",
+            "Instr": "RES",
+            "Operands": [
+                "0",
+                "L"
+            ]
+        },
+        "7C": {
+            "Desc": "Test bit 7 of H",
+            "Instr": "BIT",
+            "Operands": [
+                "7",
+                "H"
+            ]
+        },
+        "B2": {
+            "Desc": "Clear (reset) bit 6 of D",
+            "Instr": "RES",
+            "Operands": [
+                "6",
+                "D"
+            ]
+        },
+        "87": {
+            "Desc": "Clear (reset) bit 0 of A",
+            "Instr": "RES",
+            "Operands": [
+                "0",
+                "A"
+            ]
+        },
+        "70": {
+            "Desc": "Test bit 6 of B",
+            "Instr": "BIT",
+            "Operands": [
+                "6",
+                "B"
+            ]
+        },
+        "FC": {
+            "Desc": "Set bit 7 of H",
+            "Instr": "SET",
+            "Operands": [
+                "7",
+                "H"
+            ]
+        },
+        "DE": {
+            "Desc": "Set bit 3 of value pointed by HL",
+            "Instr": "SET",
+            "Operands": [
+                "3",
+                "(HL)"
+            ]
+        },
+        "65": {
+            "Desc": "Test bit 4 of L",
+            "Instr": "BIT",
+            "Operands": [
+                "4",
+                "L"
+            ]
+        },
+        "A5": {
+            "Desc": "Clear (reset) bit 4 of L",
+            "Instr": "RES",
+            "Operands": [
+                "4",
+                "L"
+            ]
+        },
+        "75": {
+            "Desc": "Test bit 6 of L",
+            "Instr": "BIT",
+            "Operands": [
+                "6",
+                "L"
+            ]
+        },
+        "03": {
+            "Desc": "Rotate E left with carry",
+            "Instr": "RLC",
+            "Operands": [
+                "E"
+            ]
+        },
+        "CE": {
+            "Desc": "Set bit 1 of value pointed by HL",
+            "Instr": "SET",
+            "Operands": [
+                "1",
+                "(HL)"
+            ]
+        },
+        "EF": {
+            "Desc": "Set bit 5 of A",
+            "Instr": "SET",
+            "Operands": [
+                "5",
+                "A"
+            ]
+        },
+        "D0": {
+            "Desc": "Set bit 2 of B",
+            "Instr": "SET",
+            "Operands": [
+                "2",
+                "B"
+            ]
+        },
+        "6D": {
+            "Desc": "Test bit 5 of L",
+            "Instr": "BIT",
+            "Operands": [
+                "5",
+                "L"
+            ]
+        },
+        "19": {
+            "Desc": "Rotate C right",
+            "Instr": "RR",
+            "Operands": [
+                "C"
+            ]
+        },
+        "E4": {
+            "Desc": "Set bit 4 of H",
+            "Instr": "SET",
+            "Operands": [
+                "4",
+                "H"
+            ]
+        },
+        "01": {
+            "Desc": "Rotate C left with carry",
+            "Instr": "RLC",
+            "Operands": [
+                "C"
+            ]
+        },
+        "1B": {
+            "Desc": "Rotate E right",
+            "Instr": "RR",
+            "Operands": [
+                "E"
+            ]
+        },
+        "46": {
+            "Desc": "Test bit 0 of value pointed by HL",
+            "Instr": "BIT",
+            "Operands": [
+                "0",
+                "(HL)"
+            ]
+        },
+        "F6": {
+            "Desc": "Set bit 6 of value pointed by HL",
+            "Instr": "SET",
+            "Operands": [
+                "6",
+                "(HL)"
+            ]
+        },
+        "5C": {
+            "Desc": "Test bit 3 of H",
+            "Instr": "BIT",
+            "Operands": [
+                "3",
+                "H"
+            ]
+        },
+        "61": {
+            "Desc": "Test bit 4 of C",
+            "Instr": "BIT",
+            "Operands": [
+                "4",
+                "C"
+            ]
+        },
+        "6C": {
+            "Desc": "Test bit 5 of H",
+            "Instr": "BIT",
+            "Operands": [
+                "5",
+                "H"
+            ]
+        },
+        "B9": {
+            "Desc": "Clear (reset) bit 7 of C",
+            "Instr": "RES",
+            "Operands": [
+                "7",
+                "C"
+            ]
+        },
+        "55": {
+            "Desc": "Test bit 2 of L",
+            "Instr": "BIT",
+            "Operands": [
+                "2",
+                "L"
+            ]
+        },
+        "B8": {
+            "Desc": "Clear (reset) bit 7 of B",
+            "Instr": "RES",
+            "Operands": [
+                "7",
+                "B"
+            ]
+        },
+        "BA": {
+            "Desc": "Clear (reset) bit 7 of D",
+            "Instr": "RES",
+            "Operands": [
+                "7",
+                "D"
+            ]
+        },
+        "35": {
+            "Desc": "Swap nybbles in L",
+            "Instr": "SWAP",
+            "Operands": [
+                "L"
+            ]
+        },
+        "66": {
+            "Desc": "Test bit 4 of value pointed by HL",
+            "Instr": "BIT",
+            "Operands": [
+                "4",
+                "(HL)"
+            ]
+        },
+        "69": {
+            "Desc": "Test bit 5 of C",
+            "Instr": "BIT",
+            "Operands": [
+                "5",
+                "C"
+            ]
+        },
+        "45": {
+            "Desc": "Test bit 0 of L",
+            "Instr": "BIT",
+            "Operands": [
+                "0",
+                "L"
+            ]
+        },
+        "29": {
+            "Desc": "Shift C right preserving sign",
+            "Instr": "SRA",
+            "Operands": [
+                "C"
+            ]
+        },
+        "4D": {
+            "Desc": "Test bit 1 of L",
+            "Instr": "BIT",
+            "Operands": [
+                "1",
+                "L"
+            ]
+        },
+        "90": {
+            "Desc": "Clear (reset) bit 2 of B",
+            "Instr": "RES",
+            "Operands": [
+                "2",
+                "B"
+            ]
+        }
+    },
+    "Direct": {
+        "95": {
+            "Desc": "Subtract L from A",
+            "Instr": "SUB",
+            "Operands": [
+                "A",
+                "L"
+            ]
+        },
+        "F3": {
+            "Desc": "DIsable interrupts",
+            "Instr": "DI",
+            "Operands": []
+        },
+        "31": {
+            "Desc": "Load 16-bit immediate into SP",
+            "Instr": "LD",
+            "Operands": [
+                "SP",
+                "nn"
+            ]
+        },
+        "10": {
+            "Desc": "Stop processor",
+            "Instr": "STOP",
+            "Operands": []
+        },
+        "8A": {
+            "Desc": "Add D and carry flag to A",
+            "Instr": "ADC",
+            "Operands": [
+                "A",
+                "D"
+            ]
+        },
+        "00": {
+            "Desc": "No Operation",
+            "Instr": "NOP",
+            "Operands": []
+        },
+        "A1": {
+            "Desc": "Logical AND C against A",
+            "Instr": "AND",
+            "Operands": [
+                "C"
+            ]
+        },
+        "60": {
+            "Desc": "Copy B to H",
+            "Instr": "LD",
+            "Operands": [
+                "H",
+                "B"
+            ]
+        },
+        "81": {
+            "Desc": "Add C to A",
+            "Instr": "ADD",
+            "Operands": [
+                "A",
+                "C"
+            ]
+        },
+        "4B": {
+            "Desc": "Copy E to C",
+            "Instr": "LD",
+            "Operands": [
+                "C",
+                "E"
+            ]
+        },
+        "43": {
+            "Desc": "Copy E to B",
+            "Instr": "LD",
+            "Operands": [
+                "B",
+                "E"
+            ]
+        },
+        "39": {
+            "Desc": "Add 16-bit SP to HL",
+            "Instr": "ADD",
+            "Operands": [
+                "HL",
+                "SP"
+            ]
+        },
+        "CD": {
+            "Desc": "Call routine at 16-bit location",
+            "Instr": "CALL",
+            "Operands": [
+                "nn"
+            ]
+        },
+        "08": {
+            "Desc": "Save SP to given address",
+            "Instr": "LD",
+            "Operands": [
+                "(nn)",
+                "SP"
+            ]
+        },
+        "0C": {
+            "Desc": "Increment C",
+            "Instr": "INC",
+            "Operands": [
+                "C"
+            ]
+        },
+        "ED": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "4F": {
+            "Desc": "Copy A to C",
+            "Instr": "LD",
+            "Operands": [
+                "C",
+                "A"
+            ]
+        },
+        "1F": {
+            "Desc": "Rotate A right",
+            "Instr": "RR",
+            "Operands": [
+                "A"
+            ]
+        },
+        "67": {
+            "Desc": "Copy A to H",
+            "Instr": "LD",
+            "Operands": [
+                "H",
+                "A"
+            ]
+        },
+        "BC": {
+            "Desc": "Compare H against A",
+            "Instr": "CP",
+            "Operands": [
+                "H"
+            ]
+        },
+        "B4": {
+            "Desc": "Logical OR H against A",
+            "Instr": "OR",
+            "Operands": [
+                "H"
+            ]
+        },
+        "3D": {
+            "Desc": "Decrement A",
+            "Instr": "DEC",
+            "Operands": [
+                "A"
+            ]
+        },
+        "96": {
+            "Desc": "Subtract value pointed by HL from A",
+            "Instr": "SUB",
+            "Operands": [
+                "A",
+                "(HL)"
+            ]
+        },
+        "C5": {
+            "Desc": "Push 16-bit BC onto stack",
+            "Instr": "PUSH",
+            "Operands": [
+                "BC"
+            ]
+        },
+        "0E": {
+            "Desc": "Load 8-bit immediate into C",
+            "Instr": "LD",
+            "Operands": [
+                "C",
+                "n"
+            ]
+        },
+        "30": {
+            "Desc": "Relative jump by signed immediate if last result caused no carry",
+            "Instr": "JR",
+            "Operands": [
+                "NC",
+                "n"
+            ]
+        },
+        "36": {
+            "Desc": "Load 8-bit immediate into address pointed by HL",
+            "Instr": "LD",
+            "Operands": [
+                "(HL)",
+                "n"
+            ]
+        },
+        "7F": {
+            "Desc": "Copy A to A",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "A"
+            ]
+        },
+        "14": {
+            "Desc": "Increment D",
+            "Instr": "INC",
+            "Operands": [
+                "D"
+            ]
+        },
+        "E9": {
+            "Desc": "Jump to 16-bit value pointed by HL",
+            "Instr": "JP",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "D3": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "DD": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "E3": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "AA": {
+            "Desc": "Logical XOR D against A",
+            "Instr": "XOR",
+            "Operands": [
+                "D"
+            ]
+        },
+        "6F": {
+            "Desc": "Copy A to L",
+            "Instr": "LD",
+            "Operands": [
+                "L",
+                "A"
+            ]
+        },
+        "D2": {
+            "Desc": "Absolute jump to 16-bit location if last result caused no carry",
+            "Instr": "JP",
+            "Operands": [
+                "NC",
+                "nn"
+            ]
+        },
+        "17": {
+            "Desc": "Rotate A left",
+            "Instr": "RL",
+            "Operands": [
+                "A"
+            ]
+        },
+        "D8": {
+            "Desc": "Return if last result caused carry",
+            "Instr": "RET",
+            "Operands": [
+                "C"
+            ]
+        },
+        "38": {
+            "Desc": "Relative jump by signed immediate if last result caused carry",
+            "Instr": "JR",
+            "Operands": [
+                "C",
+                "n"
+            ]
+        },
+        "1A": {
+            "Desc": "Load A from address pointed to by DE",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "(DE)"
+            ]
+        },
+        "37": {
+            "Desc": "Set carry flag",
+            "Instr": "SCF",
+            "Operands": []
+        },
+        "D5": {
+            "Desc": "Push 16-bit DE onto stack",
+            "Instr": "PUSH",
+            "Operands": [
+                "DE"
+            ]
+        },
+        "D6": {
+            "Desc": "Subtract 8-bit immediate from A",
+            "Instr": "SUB",
+            "Operands": [
+                "A",
+                "n"
+            ]
+        },
+        "58": {
+            "Desc": "Copy B to E",
+            "Instr": "LD",
+            "Operands": [
+                "E",
+                "B"
+            ]
+        },
+        "A6": {
+            "Desc": "Logical AND value pointed by HL against A",
+            "Instr": "AND",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "D1": {
+            "Desc": "Pop 16-bit value from stack into DE",
+            "Instr": "POP",
+            "Operands": [
+                "DE"
+            ]
+        },
+        "5F": {
+            "Desc": "Copy A to E",
+            "Instr": "LD",
+            "Operands": [
+                "E",
+                "A"
+            ]
+        },
+        "2D": {
+            "Desc": "Decrement L",
+            "Instr": "DEC",
+            "Operands": [
+                "L"
+            ]
+        },
+        "34": {
+            "Desc": "Increment value pointed by HL",
+            "Instr": "INC",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "02": {
+            "Desc": "Save A to address pointed by BC",
+            "Instr": "LD",
+            "Operands": [
+                "(BC)",
+                "A"
+            ]
+        },
+        "0A": {
+            "Desc": "Load A from address pointed to by BC",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "(BC)"
+            ]
+        },
+        "2E": {
+            "Desc": "Load 8-bit immediate into L",
+            "Instr": "LD",
+            "Operands": [
+                "L",
+                "n"
+            ]
+        },
+        "C3": {
+            "Desc": "Absolute jump to 16-bit location",
+            "Instr": "JP",
+            "Operands": [
+                "nn"
+            ]
+        },
+        "E6": {
+            "Desc": "Logical AND 8-bit immediate against A",
+            "Instr": "AND",
+            "Operands": [
+                "n"
+            ]
+        },
+        "50": {
+            "Desc": "Copy B to D",
+            "Instr": "LD",
+            "Operands": [
+                "D",
+                "B"
+            ]
+        },
+        "F8": {
+            "Desc": "Add signed 8-bit immediate to SP and save result in HL",
+            "Instr": "LDHL",
+            "Operands": [
+                "SP",
+                "d"
+            ]
+        },
+        "8D": {
+            "Desc": "Add and carry flag L to A",
+            "Instr": "ADC",
+            "Operands": [
+                "A",
+                "L"
+            ]
+        },
+        "C7": {
+            "Desc": "Call routine at address 0000h",
+            "Instr": "RST",
+            "Operands": [
+                "0"
+            ]
+        },
+        "9B": {
+            "Desc": "Subtract E and carry flag from A",
+            "Instr": "SBC",
+            "Operands": [
+                "A",
+                "E"
+            ]
+        },
+        "74": {
+            "Desc": "Copy H to address pointed by HL",
+            "Instr": "LD",
+            "Operands": [
+                "(HL)",
+                "H"
+            ]
+        },
+        "F9": {
+            "Desc": "Copy HL to SP",
+            "Instr": "LD",
+            "Operands": [
+                "SP",
+                "HL"
+            ]
+        },
+        "44": {
+            "Desc": "Copy H to B",
+            "Instr": "LD",
+            "Operands": [
+                "B",
+                "H"
+            ]
+        },
+        "D7": {
+            "Desc": "Call routine at address 0010h",
+            "Instr": "RST",
+            "Operands": [
+                "10"
+            ]
+        },
+        "3E": {
+            "Desc": "Load 8-bit immediate into A",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "n"
+            ]
+        },
+        "28": {
+            "Desc": "Relative jump by signed immediate if last result was zero",
+            "Instr": "JR",
+            "Operands": [
+                "Z",
+                "n"
+            ]
+        },
+        "E0": {
+            "Desc": "Save A at address pointed to by (FF00h + 8-bit immediate)",
+            "Instr": "LDH",
+            "Operands": [
+                "(n)",
+                "A"
+            ]
+        },
+        "3F": {
+            "Desc": "Clear carry flag",
+            "Instr": "CCF",
+            "Operands": []
+        },
+        "A0": {
+            "Desc": "Logical AND B against A",
+            "Instr": "AND",
+            "Operands": [
+                "B"
+            ]
+        },
+        "2F": {
+            "Desc": "Complement (logical NOT) on A",
+            "Instr": "CPL",
+            "Operands": []
+        },
+        "D4": {
+            "Desc": "Call routine at 16-bit location if last result caused no carry",
+            "Instr": "CALL",
+            "Operands": [
+                "NC",
+                "nn"
+            ]
+        },
+        "3B": {
+            "Desc": "Decrement 16-bit SP",
+            "Instr": "DEC",
+            "Operands": [
+                "SP"
+            ]
+        },
+        "49": {
+            "Desc": "Copy C to C",
+            "Instr": "LD",
+            "Operands": [
+                "C",
+                "C"
+            ]
+        },
+        "FF": {
+            "Desc": "Call routine at address 0038h",
+            "Instr": "RST",
+            "Operands": [
+                "38"
+            ]
+        },
+        "C0": {
+            "Desc": "Return if last result was not zero",
+            "Instr": "RET",
+            "Operands": [
+                "NZ"
+            ]
+        },
+        "A2": {
+            "Desc": "Logical AND D against A",
+            "Instr": "AND",
+            "Operands": [
+                "D"
+            ]
+        },
+        "DF": {
+            "Desc": "Call routine at address 0018h",
+            "Instr": "RST",
+            "Operands": [
+                "18"
+            ]
+        },
+        "EB": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "E2": {
+            "Desc": "Save A at address pointed to by (FF00h + C)",
+            "Instr": "LDH",
+            "Operands": [
+                "(C)",
+                "A"
+            ]
+        },
+        "C8": {
+            "Desc": "Return if last result was zero",
+            "Instr": "RET",
+            "Operands": [
+                "Z"
+            ]
+        },
+        "AC": {
+            "Desc": "Logical XOR H against A",
+            "Instr": "XOR",
+            "Operands": [
+                "H"
+            ]
+        },
+        "7E": {
+            "Desc": "Copy value pointed by HL to A",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "(HL)"
+            ]
+        },
+        "57": {
+            "Desc": "Copy A to D",
+            "Instr": "LD",
+            "Operands": [
+                "D",
+                "A"
+            ]
+        },
+        "88": {
+            "Desc": "Add B and carry flag to A",
+            "Instr": "ADC",
+            "Operands": [
+                "A",
+                "B"
+            ]
+        },
+        "F2": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "32": {
+            "Desc": "Save A to address pointed by HL, and decrement HL",
+            "Instr": "LDD",
+            "Operands": [
+                "(HL)",
+                "A"
+            ]
+        },
+        "71": {
+            "Desc": "Copy C to address pointed by HL",
+            "Instr": "LD",
+            "Operands": [
+                "(HL)",
+                "C"
+            ]
+        },
+        "91": {
+            "Desc": "Subtract C from A",
+            "Instr": "SUB",
+            "Operands": [
+                "A",
+                "C"
+            ]
+        },
+        "CF": {
+            "Desc": "Call routine at address 0008h",
+            "Instr": "RST",
+            "Operands": [
+                "8"
+            ]
+        },
+        "B3": {
+            "Desc": "Logical OR E against A",
+            "Instr": "OR",
+            "Operands": [
+                "E"
+            ]
+        },
+        "68": {
+            "Desc": "Copy B to L",
+            "Instr": "LD",
+            "Operands": [
+                "L",
+                "B"
+            ]
+        },
+        "16": {
+            "Desc": "Load 8-bit immediate into D",
+            "Instr": "LD",
+            "Operands": [
+                "D",
+                "n"
+            ]
+        },
+        "6E": {
+            "Desc": "Copy value pointed by HL to L",
+            "Instr": "LD",
+            "Operands": [
+                "L",
+                "(HL)"
+            ]
+        },
+        "62": {
+            "Desc": "Copy D to H",
+            "Instr": "LD",
+            "Operands": [
+                "H",
+                "D"
+            ]
+        },
+        "EA": {
+            "Desc": "Save A at given 16-bit address",
+            "Instr": "LD",
+            "Operands": [
+                "(nn)",
+                "A"
+            ]
+        },
+        "CC": {
+            "Desc": "Call routine at 16-bit location if last result was zero",
+            "Instr": "CALL",
+            "Operands": [
+                "Z",
+                "nn"
+            ]
+        },
+        "63": {
+            "Desc": "Copy E to H",
+            "Instr": "LD",
+            "Operands": [
+                "H",
+                "E"
+            ]
+        },
+        "F0": {
+            "Desc": "Load A from address pointed to by (FF00h + 8-bit immediate)",
+            "Instr": "LDH",
+            "Operands": [
+                "A",
+                "(n)"
+            ]
+        },
+        "3A": {
+            "Desc": "Load A from address pointed to by HL, and decrement HL",
+            "Instr": "LDD",
+            "Operands": [
+                "A",
+                "(HL)"
+            ]
+        },
+        "C1": {
+            "Desc": "Pop 16-bit value from stack into BC",
+            "Instr": "POP",
+            "Operands": [
+                "BC"
+            ]
+        },
+        "82": {
+            "Desc": "Add D to A",
+            "Instr": "ADD",
+            "Operands": [
+                "A",
+                "D"
+            ]
+        },
+        "51": {
+            "Desc": "Copy C to D",
+            "Instr": "LD",
+            "Operands": [
+                "D",
+                "C"
+            ]
+        },
+        "8E": {
+            "Desc": "Add value pointed by HL and carry flag to A",
+            "Instr": "ADC",
+            "Operands": [
+                "A",
+                "(HL)"
+            ]
+        },
+        "BF": {
+            "Desc": "Compare A against A",
+            "Instr": "CP",
+            "Operands": [
+                "A"
+            ]
+        },
+        "0D": {
+            "Desc": "Decrement C",
+            "Instr": "DEC",
+            "Operands": [
+                "C"
+            ]
+        },
+        "DB": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "8C": {
+            "Desc": "Add H and carry flag to A",
+            "Instr": "ADC",
+            "Operands": [
+                "A",
+                "H"
+            ]
+        },
+        "2B": {
+            "Desc": "Decrement 16-bit HL",
+            "Instr": "DEC",
+            "Operands": [
+                "HL"
+            ]
+        },
+        "AE": {
+            "Desc": "Logical XOR value pointed by HL against A",
+            "Instr": "XOR",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "1E": {
+            "Desc": "Load 8-bit immediate into E",
+            "Instr": "LD",
+            "Operands": [
+                "E",
+                "n"
+            ]
+        },
+        "FB": {
+            "Desc": "Enable interrupts",
+            "Instr": "EI",
+            "Operands": []
+        },
+        "52": {
+            "Desc": "Copy D to D",
+            "Instr": "LD",
+            "Operands": [
+                "D",
+                "D"
+            ]
+        },
+        "CB": {
+            "Desc": "Extended operations (two-byte instruction code)",
+            "Instr": "Ext",
+            "Operands": [
+                "ops"
+            ]
+        },
+        "25": {
+            "Desc": "Decrement H",
+            "Instr": "DEC",
+            "Operands": [
+                "H"
+            ]
+        },
+        "92": {
+            "Desc": "Subtract D from A",
+            "Instr": "SUB",
+            "Operands": [
+                "A",
+                "D"
+            ]
+        },
+        "78": {
+            "Desc": "Copy B to A",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "B"
+            ]
+        },
+        "3C": {
+            "Desc": "Increment A",
+            "Instr": "INC",
+            "Operands": [
+                "A"
+            ]
+        },
+        "BB": {
+            "Desc": "Compare E against A",
+            "Instr": "CP",
+            "Operands": [
+                "E"
+            ]
+        },
+        "93": {
+            "Desc": "Subtract E from A",
+            "Instr": "SUB",
+            "Operands": [
+                "A",
+                "E"
+            ]
+        },
+        "BD": {
+            "Desc": "Compare L against A",
+            "Instr": "CP",
+            "Operands": [
+                "L"
+            ]
+        },
+        "C6": {
+            "Desc": "Add 8-bit immediate to A",
+            "Instr": "ADD",
+            "Operands": [
+                "A",
+                "n"
+            ]
+        },
+        "59": {
+            "Desc": "Copy C to E",
+            "Instr": "LD",
+            "Operands": [
+                "E",
+                "C"
+            ]
+        },
+        "79": {
+            "Desc": "Copy C to A",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "C"
+            ]
+        },
+        "12": {
+            "Desc": "Save A to address pointed by DE",
+            "Instr": "LD",
+            "Operands": [
+                "(DE)",
+                "A"
+            ]
+        },
+        "41": {
+            "Desc": "Copy C to B",
+            "Instr": "LD",
+            "Operands": [
+                "B",
+                "C"
+            ]
+        },
+        "B7": {
+            "Desc": "Logical OR A against A",
+            "Instr": "OR",
+            "Operands": [
+                "A"
+            ]
+        },
+        "76": {
+            "Desc": "Halt processor",
+            "Instr": "HALT",
+            "Operands": []
+        },
+        "F7": {
+            "Desc": "Call routine at address 0030h",
+            "Instr": "RST",
+            "Operands": [
+                "30"
+            ]
+        },
+        "05": {
+            "Desc": "Decrement B",
+            "Instr": "DEC",
+            "Operands": [
+                "B"
+            ]
+        },
+        "5A": {
+            "Desc": "Copy D to E",
+            "Instr": "LD",
+            "Operands": [
+                "E",
+                "D"
+            ]
+        },
+        "1D": {
+            "Desc": "Decrement E",
+            "Instr": "DEC",
+            "Operands": [
+                "E"
+            ]
+        },
+        "B0": {
+            "Desc": "Logical OR B against A",
+            "Instr": "OR",
+            "Operands": [
+                "B"
+            ]
+        },
+        "15": {
+            "Desc": "Decrement D",
+            "Instr": "DEC",
+            "Operands": [
+                "D"
+            ]
+        },
+        "5B": {
+            "Desc": "Copy E to E",
+            "Instr": "LD",
+            "Operands": [
+                "E",
+                "E"
+            ]
+        },
+        "06": {
+            "Desc": "Load 8-bit immediate into B",
+            "Instr": "LD",
+            "Operands": [
+                "B",
+                "n"
+            ]
+        },
+        "AF": {
+            "Desc": "Logical XOR A against A",
+            "Instr": "XOR",
+            "Operands": [
+                "A"
+            ]
+        },
+        "8B": {
+            "Desc": "Add E and carry flag to A",
+            "Instr": "ADC",
+            "Operands": [
+                "A",
+                "E"
+            ]
+        },
+        "D9": {
+            "Desc": "Enable interrupts and return to calling routine",
+            "Instr": "RETI",
+            "Operands": []
+        },
+        "C4": {
+            "Desc": "Call routine at 16-bit location if last result was not zero",
+            "Instr": "CALL",
+            "Operands": [
+                "NZ",
+                "nn"
+            ]
+        },
+        "B5": {
+            "Desc": "Logical OR L against A",
+            "Instr": "OR",
+            "Operands": [
+                "L"
+            ]
+        },
+        "C9": {
+            "Desc": "Return to calling routine",
+            "Instr": "RET",
+            "Operands": []
+        },
+        "99": {
+            "Desc": "Subtract C and carry flag from A",
+            "Instr": "SBC",
+            "Operands": [
+                "A",
+                "C"
+            ]
+        },
+        "07": {
+            "Desc": "Rotate A left with carry",
+            "Instr": "RLC",
+            "Operands": [
+                "A"
+            ]
+        },
+        "40": {
+            "Desc": "Copy B to B",
+            "Instr": "LD",
+            "Operands": [
+                "B",
+                "B"
+            ]
+        },
+        "13": {
+            "Desc": "Increment 16-bit DE",
+            "Instr": "INC",
+            "Operands": [
+                "DE"
+            ]
+        },
+        "77": {
+            "Desc": "Copy A to address pointed by HL",
+            "Instr": "LD",
+            "Operands": [
+                "(HL)",
+                "A"
+            ]
+        },
+        "18": {
+            "Desc": "Relative jump by signed immediate",
+            "Instr": "JR",
+            "Operands": [
+                "n"
+            ]
+        },
+        "94": {
+            "Desc": "Subtract H from A",
+            "Instr": "SUB",
+            "Operands": [
+                "A",
+                "H"
+            ]
+        },
+        "1C": {
+            "Desc": "Increment E",
+            "Instr": "INC",
+            "Operands": [
+                "E"
+            ]
+        },
+        "4A": {
+            "Desc": "Copy D to C",
+            "Instr": "LD",
+            "Operands": [
+                "C",
+                "D"
+            ]
+        },
+        "7B": {
+            "Desc": "Copy E to A",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "E"
+            ]
+        },
+        "42": {
+            "Desc": "Copy D to B",
+            "Instr": "LD",
+            "Operands": [
+                "B",
+                "D"
+            ]
+        },
+        "53": {
+            "Desc": "Copy E to D",
+            "Instr": "LD",
+            "Operands": [
+                "D",
+                "E"
+            ]
+        },
+        "09": {
+            "Desc": "Add 16-bit BC to HL",
+            "Instr": "ADD",
+            "Operands": [
+                "HL",
+                "BC"
+            ]
+        },
+        "9F": {
+            "Desc": "Subtract A and carry flag from A",
+            "Instr": "SBC",
+            "Operands": [
+                "A",
+                "A"
+            ]
+        },
+        "AD": {
+            "Desc": "Logical XOR L against A",
+            "Instr": "XOR",
+            "Operands": [
+                "L"
+            ]
+        },
+        "54": {
+            "Desc": "Copy H to D",
+            "Instr": "LD",
+            "Operands": [
+                "D",
+                "H"
+            ]
+        },
+        "98": {
+            "Desc": "Subtract B and carry flag from A",
+            "Instr": "SBC",
+            "Operands": [
+                "A",
+                "B"
+            ]
+        },
+        "A7": {
+            "Desc": "Logical AND A against A",
+            "Instr": "AND",
+            "Operands": [
+                "A"
+            ]
+        },
+        "E1": {
+            "Desc": "Pop 16-bit value from stack into HL",
+            "Instr": "POP",
+            "Operands": [
+                "HL"
+            ]
+        },
+        "7A": {
+            "Desc": "Copy D to A",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "D"
+            ]
+        },
+        "F1": {
+            "Desc": "Pop 16-bit value from stack into AF",
+            "Instr": "POP",
+            "Operands": [
+                "AF"
+            ]
+        },
+        "26": {
+            "Desc": "Load 8-bit immediate into H",
+            "Instr": "LD",
+            "Operands": [
+                "H",
+                "n"
+            ]
+        },
+        "E8": {
+            "Desc": "Add signed 8-bit immediate to SP",
+            "Instr": "ADD",
+            "Operands": [
+                "SP",
+                "d"
+            ]
+        },
+        "B1": {
+            "Desc": "Logical OR C against A",
+            "Instr": "OR",
+            "Operands": [
+                "C"
+            ]
+        },
+        "56": {
+            "Desc": "Copy value pointed by HL to D",
+            "Instr": "LD",
+            "Operands": [
+                "D",
+                "(HL)"
+            ]
+        },
+        "2A": {
+            "Desc": "Load A from address pointed to by HL, and increment HL",
+            "Instr": "LDI",
+            "Operands": [
+                "A",
+                "(HL)"
+            ]
+        },
+        "B6": {
+            "Desc": "Logical OR value pointed by HL against A",
+            "Instr": "OR",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "5E": {
+            "Desc": "Copy value pointed by HL to E",
+            "Instr": "LD",
+            "Operands": [
+                "E",
+                "(HL)"
+            ]
+        },
+        "DA": {
+            "Desc": "Absolute jump to 16-bit location if last result caused carry",
+            "Instr": "JP",
+            "Operands": [
+                "C",
+                "nn"
+            ]
+        },
+        "83": {
+            "Desc": "Add E to A",
+            "Instr": "ADD",
+            "Operands": [
+                "A",
+                "E"
+            ]
+        },
+        "86": {
+            "Desc": "Add value pointed by HL to A",
+            "Instr": "ADD",
+            "Operands": [
+                "A",
+                "(HL)"
+            ]
+        },
+        "A9": {
+            "Desc": "Logical XOR C against A",
+            "Instr": "XOR",
+            "Operands": [
+                "C"
+            ]
+        },
+        "7D": {
+            "Desc": "Copy L to A",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "L"
+            ]
+        },
+        "0F": {
+            "Desc": "Rotate A right with carry",
+            "Instr": "RRC",
+            "Operands": [
+                "A"
+            ]
+        },
+        "89": {
+            "Desc": "Add C and carry flag to A",
+            "Instr": "ADC",
+            "Operands": [
+                "A",
+                "C"
+            ]
+        },
+        "33": {
+            "Desc": "Increment 16-bit HL",
+            "Instr": "INC",
+            "Operands": [
+                "SP"
+            ]
+        },
+        "8F": {
+            "Desc": "Add A and carry flag to A",
+            "Instr": "ADC",
+            "Operands": [
+                "A",
+                "A"
+            ]
+        },
+        "04": {
+            "Desc": "Increment B",
+            "Instr": "INC",
+            "Operands": [
+                "B"
+            ]
+        },
+        "F4": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "11": {
+            "Desc": "Load 16-bit immediate into DE",
+            "Instr": "LD",
+            "Operands": [
+                "DE",
+                "nn"
+            ]
+        },
+        "2C": {
+            "Desc": "Increment L",
+            "Instr": "INC",
+            "Operands": [
+                "L"
+            ]
+        },
+        "FA": {
+            "Desc": "Load A from given 16-bit address",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "(nn)"
+            ]
+        },
+        "9C": {
+            "Desc": "Subtract H and carry flag from A",
+            "Instr": "SBC",
+            "Operands": [
+                "A",
+                "H"
+            ]
+        },
+        "80": {
+            "Desc": "Add B to A",
+            "Instr": "ADD",
+            "Operands": [
+                "A",
+                "B"
+            ]
+        },
+        "0B": {
+            "Desc": "Decrement 16-bit BC",
+            "Instr": "DEC",
+            "Operands": [
+                "BC"
+            ]
+        },
+        "48": {
+            "Desc": "Copy B to C",
+            "Instr": "LD",
+            "Operands": [
+                "C",
+                "B"
+            ]
+        },
+        "9E": {
+            "Desc": "Subtract value pointed by HL and carry flag from A",
+            "Instr": "SBC",
+            "Operands": [
+                "A",
+                "(HL)"
+            ]
+        },
+        "EC": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "EE": {
+            "Desc": "Logical XOR 8-bit immediate against A",
+            "Instr": "XOR",
+            "Operands": [
+                "n"
+            ]
+        },
+        "6B": {
+            "Desc": "Copy E to L",
+            "Instr": "LD",
+            "Operands": [
+                "L",
+                "E"
+            ]
+        },
+        "FD": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "A8": {
+            "Desc": "Logical XOR B against A",
+            "Instr": "XOR",
+            "Operands": [
+                "B"
+            ]
+        },
+        "FE": {
+            "Desc": "Compare 8-bit immediate against A",
+            "Instr": "CP",
+            "Operands": [
+                "n"
+            ]
+        },
+        "E5": {
+            "Desc": "Push 16-bit HL onto stack",
+            "Instr": "PUSH",
+            "Operands": [
+                "HL"
+            ]
+        },
+        "E7": {
+            "Desc": "Call routine at address 0020h",
+            "Instr": "RST",
+            "Operands": [
+                "20"
+            ]
+        },
+        "72": {
+            "Desc": "Copy D to address pointed by HL",
+            "Instr": "LD",
+            "Operands": [
+                "(HL)",
+                "D"
+            ]
+        },
+        "20": {
+            "Desc": "Relative jump by signed immediate if last result was not zero",
+            "Instr": "JR",
+            "Operands": [
+                "NZ",
+                "n"
+            ]
+        },
+        "84": {
+            "Desc": "Add H to A",
+            "Instr": "ADD",
+            "Operands": [
+                "A",
+                "H"
+            ]
+        },
+        "DC": {
+            "Desc": "Call routine at 16-bit location if last result caused carry",
+            "Instr": "CALL",
+            "Operands": [
+                "C",
+                "nn"
+            ]
+        },
+        "A3": {
+            "Desc": "Logical AND E against A",
+            "Instr": "AND",
+            "Operands": [
+                "E"
+            ]
+        },
+        "4C": {
+            "Desc": "Copy H to C",
+            "Instr": "LD",
+            "Operands": [
+                "C",
+                "H"
+            ]
+        },
+        "97": {
+            "Desc": "Subtract A from A",
+            "Instr": "SUB",
+            "Operands": [
+                "A",
+                "A"
+            ]
+        },
+        "4E": {
+            "Desc": "Copy value pointed by HL to C",
+            "Instr": "LD",
+            "Operands": [
+                "C",
+                "(HL)"
+            ]
+        },
+        "24": {
+            "Desc": "Increment H",
+            "Instr": "INC",
+            "Operands": [
+                "H"
+            ]
+        },
+        "CA": {
+            "Desc": "Absolute jump to 16-bit location if last result was zero",
+            "Instr": "JP",
+            "Operands": [
+                "Z",
+                "nn"
+            ]
+        },
+        "22": {
+            "Desc": "Save A to address pointed by HL, and increment HL",
+            "Instr": "LDI",
+            "Operands": [
+                "(HL)",
+                "A"
+            ]
+        },
+        "AB": {
+            "Desc": "Logical XOR E against A",
+            "Instr": "XOR",
+            "Operands": [
+                "E"
+            ]
+        },
+        "5D": {
+            "Desc": "Copy L to E",
+            "Instr": "LD",
+            "Operands": [
+                "E",
+                "L"
+            ]
+        },
+        "23": {
+            "Desc": "Increment 16-bit HL",
+            "Instr": "INC",
+            "Operands": [
+                "HL"
+            ]
+        },
+        "F5": {
+            "Desc": "Push 16-bit AF onto stack",
+            "Instr": "PUSH",
+            "Operands": [
+                "AF"
+            ]
+        },
+        "A4": {
+            "Desc": "Logical AND H against A",
+            "Instr": "AND",
+            "Operands": [
+                "H"
+            ]
+        },
+        "64": {
+            "Desc": "Copy H to H",
+            "Instr": "LD",
+            "Operands": [
+                "H",
+                "H"
+            ]
+        },
+        "9A": {
+            "Desc": "Subtract D and carry flag from A",
+            "Instr": "SBC",
+            "Operands": [
+                "A",
+                "D"
+            ]
+        },
+        "73": {
+            "Desc": "Copy E to address pointed by HL",
+            "Instr": "LD",
+            "Operands": [
+                "(HL)",
+                "E"
+            ]
+        },
+        "47": {
+            "Desc": "Copy A to B",
+            "Instr": "LD",
+            "Operands": [
+                "B",
+                "A"
+            ]
+        },
+        "6A": {
+            "Desc": "Copy D to L",
+            "Instr": "LD",
+            "Operands": [
+                "L",
+                "D"
+            ]
+        },
+        "C2": {
+            "Desc": "Absolute jump to 16-bit location if last result was not zero",
+            "Instr": "JP",
+            "Operands": [
+                "NZ",
+                "nn"
+            ]
+        },
+        "9D": {
+            "Desc": "Subtract and carry flag L from A",
+            "Instr": "SBC",
+            "Operands": [
+                "A",
+                "L"
+            ]
+        },
+        "21": {
+            "Desc": "Load 16-bit immediate into HL",
+            "Instr": "LD",
+            "Operands": [
+                "HL",
+                "nn"
+            ]
+        },
+        "BE": {
+            "Desc": "Compare value pointed by HL against A",
+            "Instr": "CP",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "27": {
+            "Desc": "Adjust A for BCD addition",
+            "Instr": "DAA",
+            "Operands": []
+        },
+        "85": {
+            "Desc": "Add L to A",
+            "Instr": "ADD",
+            "Operands": [
+                "A",
+                "L"
+            ]
+        },
+        "7C": {
+            "Desc": "Copy H to A",
+            "Instr": "LD",
+            "Operands": [
+                "A",
+                "H"
+            ]
+        },
+        "B2": {
+            "Desc": "Logical OR D against A",
+            "Instr": "OR",
+            "Operands": [
+                "D"
+            ]
+        },
+        "87": {
+            "Desc": "Add A to A",
+            "Instr": "ADD",
+            "Operands": [
+                "A",
+                "A"
+            ]
+        },
+        "70": {
+            "Desc": "Copy B to address pointed by HL",
+            "Instr": "LD",
+            "Operands": [
+                "(HL)",
+                "B"
+            ]
+        },
+        "FC": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "DE": {
+            "Desc": "Subtract 8-bit immediate and carry from A",
+            "Instr": "SBC",
+            "Operands": [
+                "A",
+                "n"
+            ]
+        },
+        "65": {
+            "Desc": "Copy L to H",
+            "Instr": "LD",
+            "Operands": [
+                "H",
+                "L"
+            ]
+        },
+        "A5": {
+            "Desc": "Logical AND L against A",
+            "Instr": "AND",
+            "Operands": [
+                "L"
+            ]
+        },
+        "75": {
+            "Desc": "Copy L to address pointed by HL",
+            "Instr": "LD",
+            "Operands": [
+                "(HL)",
+                "L"
+            ]
+        },
+        "03": {
+            "Desc": "Increment 16-bit BC",
+            "Instr": "INC",
+            "Operands": [
+                "BC"
+            ]
+        },
+        "CE": {
+            "Desc": "Add 8-bit immediate and carry to A",
+            "Instr": "ADC",
+            "Operands": [
+                "A",
+                "n"
+            ]
+        },
+        "EF": {
+            "Desc": "Call routine at address 0028h",
+            "Instr": "RST",
+            "Operands": [
+                "28"
+            ]
+        },
+        "D0": {
+            "Desc": "Return if last result caused no carry",
+            "Instr": "RET",
+            "Operands": [
+                "NC"
+            ]
+        },
+        "6D": {
+            "Desc": "Copy L to L",
+            "Instr": "LD",
+            "Operands": [
+                "L",
+                "L"
+            ]
+        },
+        "19": {
+            "Desc": "Add 16-bit DE to HL",
+            "Instr": "ADD",
+            "Operands": [
+                "HL",
+                "DE"
+            ]
+        },
+        "E4": {
+            "Desc": "Operation removed in this CPU",
+            "Instr": "XX",
+            "Operands": []
+        },
+        "01": {
+            "Desc": "Load 16-bit immediate into BC",
+            "Instr": "LD",
+            "Operands": [
+                "BC",
+                "nn"
+            ]
+        },
+        "1B": {
+            "Desc": "Decrement 16-bit DE",
+            "Instr": "DEC",
+            "Operands": [
+                "DE"
+            ]
+        },
+        "46": {
+            "Desc": "Copy value pointed by HL to B",
+            "Instr": "LD",
+            "Operands": [
+                "B",
+                "(HL)"
+            ]
+        },
+        "F6": {
+            "Desc": "Logical OR 8-bit immediate against A",
+            "Instr": "OR",
+            "Operands": [
+                "n"
+            ]
+        },
+        "5C": {
+            "Desc": "Copy H to E",
+            "Instr": "LD",
+            "Operands": [
+                "E",
+                "H"
+            ]
+        },
+        "61": {
+            "Desc": "Copy C to H",
+            "Instr": "LD",
+            "Operands": [
+                "H",
+                "C"
+            ]
+        },
+        "6C": {
+            "Desc": "Copy H to L",
+            "Instr": "LD",
+            "Operands": [
+                "L",
+                "H"
+            ]
+        },
+        "B9": {
+            "Desc": "Compare C against A",
+            "Instr": "CP",
+            "Operands": [
+                "C"
+            ]
+        },
+        "55": {
+            "Desc": "Copy L to D",
+            "Instr": "LD",
+            "Operands": [
+                "D",
+                "L"
+            ]
+        },
+        "B8": {
+            "Desc": "Compare B against A",
+            "Instr": "CP",
+            "Operands": [
+                "B"
+            ]
+        },
+        "BA": {
+            "Desc": "Compare D against A",
+            "Instr": "CP",
+            "Operands": [
+                "D"
+            ]
+        },
+        "35": {
+            "Desc": "Decrement value pointed by HL",
+            "Instr": "DEC",
+            "Operands": [
+                "(HL)"
+            ]
+        },
+        "66": {
+            "Desc": "Copy value pointed by HL to H",
+            "Instr": "LD",
+            "Operands": [
+                "H",
+                "(HL)"
+            ]
+        },
+        "69": {
+            "Desc": "Copy C to L",
+            "Instr": "LD",
+            "Operands": [
+                "L",
+                "C"
+            ]
+        },
+        "45": {
+            "Desc": "Copy L to B",
+            "Instr": "LD",
+            "Operands": [
+                "B",
+                "L"
+            ]
+        },
+        "29": {
+            "Desc": "Add 16-bit HL to HL",
+            "Instr": "ADD",
+            "Operands": [
+                "HL",
+                "HL"
+            ]
+        },
+        "4D": {
+            "Desc": "Copy L to C",
+            "Instr": "LD",
+            "Operands": [
+                "C",
+                "L"
+            ]
+        },
+        "90": {
+            "Desc": "Subtract B from A",
+            "Instr": "SUB",
+            "Operands": [
+                "A",
+                "B"
+            ]
+        }
+    }
+}
