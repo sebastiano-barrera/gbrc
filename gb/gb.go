@@ -1,33 +1,201 @@
 package gb
 
 import (
+	"errors"
+	"fmt"
 	"gbrc/compiler"
 	"io"
 )
 
+// The type that ties all pieces together
 type Arch struct{}
-type Register int
-type IndirectRegister Register
-type CompositeRegister struct{ lo, hi Register }
+
+// Operand types
+type Register8 int
+type Register16 int
+type IndirectReg Register16
+type CompositeReg struct{ lo, hi Register8 }
+type IndirectComposite CompositeReg
+type Immediate16 uint16
+type Immediate8 uint16
 
 const (
-	A Register = iota
+	A Register8 = iota
+	F
 	B
 	C
 	D
 	E
-	F
-	G
 	H
 	L
+
+	SP Register16 = iota
+	PC
 )
 
-type Operand interface {
-	GenGetter(c *compiler.Compiler) error
-	GenSetter(c *compiler.Compiler, value Operand) error
+// Represents an expression in the compiled code
+type Expr struct {
+	Format    string
+	Terms     []Place
+	ValueSize uint
 }
 
-func compileInstrSLA(c *compiler.Compiler, operands ...[]Operand) error {
+func MkExpr(size uint, format string, args ...Place) *Expr {
+	return &Expr{format, args, size}
+}
+
+// The general interface for representing accesses and mutations to
+// the machine state in the compiled code.  For any Place p,
+// p.String() must return the text of an *expression* that returns, in
+// the compiled code, the value of the represented place;
+// p.Setter(value) must return the *statement* that sets the place to
+// the given value, checking that the size is correct by using the
+// value's Size() method. (If the size is wrong, errSizeMismatch
+// should be returned).
+type Place interface {
+	fmt.Stringer
+	Setter(value Place) (string, error)
+	Size() uint // In bytes
+}
+
+var (
+	errReadOnly     = errors.New("compiler error: place is read-only")
+	errSizeMismatch = errors.New("compiler error: assignment size mismatch")
+)
+
+//
+// Implementations of Place for all the operand types
+//
+
+func (imm Immediate8) String() string {
+	return fmt.Sprintf("0x%02x", uint16(imm))
+}
+
+func (imm Immediate8) Setter(value Place) (string, error) {
+	return "", errReadOnly
+}
+
+func (imm Immediate8) Size() uint { return 1 }
+
+
+func (imm Immediate16) String() string {
+	return fmt.Sprintf("0x%04x", uint16(imm))
+}
+
+func (imm Immediate16) Setter(value Place) (string, error) {
+	return "", errReadOnly
+}
+
+func (imm Immediate16) Size() uint { return 2 }
+
+
+func (reg Register8) String() string {
+	return fmt.Sprintf("m.Reg8[%d]", int(reg))
+}
+
+func (reg Register8) Setter(value Place) (string, error) {
+	if value.Size() != reg.Size() {
+		return "", errSizeMismatch
+	}
+	return fmt.Sprintf("m.Reg8[%d] = %v\n", int(reg), value), nil
+}
+
+func (reg Register8) Size() uint { return 1 }
+
+
+func (reg Register16) String() string {
+	return fmt.Sprintf("m.Reg16[%d]", int(reg))
+}
+
+func (reg Register16) Setter(value Place) (string, error) {
+	if value.Size() != reg.Size() {
+		return "", errSizeMismatch
+	}
+	return fmt.Sprintf("m.Reg16[%d] = %v\n", int(reg), value), nil
+}
+
+func (reg Register16) Size() uint { return 16 }
+
+
+// type IndirectReg Register16
+func (reg IndirectReg) String() string {
+	return fmt.Sprintf("m.MemRead(%s)", Register16(reg))
+}
+
+func (reg IndirectReg) Setter(value Place) (string, error) {
+	if value.Size() != 1 {
+		return "", errSizeMismatch
+	}
+	stmt := fmt.Sprintf("m.MemWrite(%s, %s)\n", Register16(reg), value)
+	return stmt, nil
+}
+
+func (reg IndirectReg) Size() uint { return 1 }
+
+
+// type CompositeRegister struct{ lo, hi Register }
+func (reg CompositeReg) String() string {
+	return fmt.Sprintf("(uint16(%s) << 8 | uint16(%s))",
+		reg.hi, reg.lo)
+}
+
+func (reg CompositeReg) Setter(value Place) (string, error) {
+	if value.Size() != 2 {
+		return "", errSizeMismatch
+	}
+	setterHi, err := reg.hi.Setter(MkExpr(1, "uint8(val >> 8)"))
+	if err != nil {
+		return "", err
+	}
+	setterLo, err := reg.lo.Setter(MkExpr(1, "uint8(val & 0xFF)"))
+	if err != nil {
+		return "", err
+	}
+
+	const tmpl = `
+func(val uint16) {\n
+	%s
+	%s
+}(%s)\n`
+	stmt := fmt.Sprintf(tmpl, setterHi, setterLo, value)
+	return stmt, nil
+}
+
+func (reg CompositeReg) Size() uint { return 2 }
+
+
+// type IndirectComposite CompositeRegister
+func (reg IndirectComposite) String() string {
+	return fmt.Sprintf("m.MemRead(%s)", CompositeReg(reg))
+}
+
+func (reg IndirectComposite) Setter(value Place) (string, error) {
+	if value.Size() != 2 {
+		return "", errSizeMismatch
+	}
+	stmt := fmt.Sprintf("m.MemWrite(%s, %s)\n", CompositeReg(reg), value)
+	return stmt, nil
+}
+
+func (reg IndirectComposite) Size() uint { return 2 }
+
+
+func (expr *Expr) String() string {
+	terms := make([]interface{}, len(expr.Terms))
+	for i, term := range expr.Terms {
+		terms[i] = term.(interface{})
+	}
+	return fmt.Sprintf(expr.Format, terms...)
+}
+
+func (expr *Expr) Setter(value Place) (string, error) {
+	return "", errReadOnly
+}
+
+func (expr *Expr) Size() uint { return expr.ValueSize }
+
+
+func compileInstrSLA(c *compiler.Compiler, operands ...Place) error {
 	// SLA E	- Shift E left preserving sign
 	// SLA L	- Shift L left preserving sign
 	// SLA (HL)	- Shift value pointed by HL left preserving sign
@@ -36,9 +204,16 @@ func compileInstrSLA(c *compiler.Compiler, operands ...[]Operand) error {
 	// SLA H	- Shift H left preserving sign
 	// SLA D	- Shift D left preserving sign
 	// SLA B	- Shift B left preserving sign
+	shiftExpr := MkExpr(operands[0].Size(), "%s << 1", operands[0])
+	instr, err := operands[0].Setter(shiftExpr)
+	if err != nil {
+		return err
+	}
+	c.PushInstr(instr)
+	return nil
 }
 
-func compileInstrSRA(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrSRA(c *compiler.Compiler, operands ...Place) error {
 	// SRA B	- Shift B right preserving sign
 	// SRA (HL)	- Shift value pointed by HL right preserving sign
 	// SRA C	- Shift C right preserving sign
@@ -49,11 +224,11 @@ func compileInstrSRA(c *compiler.Compiler, operands ...[]Operand) error {
 	// SRA L	- Shift L right preserving sign
 }
 
-func compileInstrHALT(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrHALT(c *compiler.Compiler, operands ...Place) error {
 	// HALT 	- Halt processor
 }
 
-func compileInstrRL(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrRL(c *compiler.Compiler, operands ...Place) error {
 	// RL L	- Rotate L left
 	// RL (HL)	- Rotate value pointed by HL left
 	// RL C	- Rotate C left
@@ -65,16 +240,31 @@ func compileInstrRL(c *compiler.Compiler, operands ...[]Operand) error {
 	// RL H	- Rotate H left
 }
 
-func compileInstrLDI(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrLDI(c *compiler.Compiler, operands ...Place) error {
 	// LDI A, (HL)	- Load A from address pointed to by HL, and increment HL
 	// LDI (HL), A	- Save A to address pointed by HL, and increment HL
+
+	instr, err := operands[0].Setter(operands[1])
+	if err != nil {
+		return err
+	}
+	c.PushInstr(instr)
+
+	incExpr := MkExpr(operands[0].Size(), "%s + 1", operands[0])
+	instr, err = operands[0].Setter(incExpr)
+	if err != nil {
+		return err
+	}
+	c.PushInstr(instr)
+
+	return nil
 }
 
-func compileInstrSTOP(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrSTOP(c *compiler.Compiler, operands ...Place) error {
 	// STOP 	- Stop processor
 }
 
-func compileInstrADD(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrADD(c *compiler.Compiler, operands ...Place) error {
 	// ADD SP, d	- Add signed 8-bit immediate to SP
 	// ADD A, n	- Add 8-bit immediate to A
 	// ADD HL, SP	- Add 16-bit SP to HL
@@ -91,7 +281,7 @@ func compileInstrADD(c *compiler.Compiler, operands ...[]Operand) error {
 	// ADD A, D	- Add D to A
 }
 
-func compileInstrRST(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrRST(c *compiler.Compiler, operands ...Place) error {
 	// RST 18	- Call routine at address 0018h
 	// RST 28	- Call routine at address 0028h
 	// RST 30	- Call routine at address 0030h
@@ -102,7 +292,7 @@ func compileInstrRST(c *compiler.Compiler, operands ...[]Operand) error {
 	// RST 0	- Call routine at address 0000h
 }
 
-func compileInstrSRL(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrSRL(c *compiler.Compiler, operands ...Place) error {
 	// SRL E	- Shift E right
 	// SRL H	- Shift H right
 	// SRL B	- Shift B right
@@ -113,7 +303,7 @@ func compileInstrSRL(c *compiler.Compiler, operands ...[]Operand) error {
 	// SRL L	- Shift L right
 }
 
-func compileInstrSUB(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrSUB(c *compiler.Compiler, operands ...Place) error {
 	// SUB A, A	- Subtract A from A
 	// SUB A, n	- Subtract 8-bit immediate from A
 	// SUB A, C	- Subtract C from A
@@ -125,11 +315,19 @@ func compileInstrSUB(c *compiler.Compiler, operands ...[]Operand) error {
 	// SUB A, H	- Subtract H from A
 }
 
-func compileInstrLDHL(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrLDHL(c *compiler.Compiler, operands ...Place) error {
 	// LDHL SP, d	- Add signed 8-bit immediate to SP and save result in HL
+
+	instr, err := CompositeReg{H, L}.Setter(
+		MkExpr(2, "%s + %s", SP, operands[1]))
+	if err != nil {
+		return err
+	}
+	c.PushInstr(instr)
+	return nil
 }
 
-func compileInstrJP(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrJP(c *compiler.Compiler, operands ...Place) error {
 	// JP Z, nn	- Absolute jump to 16-bit location if last result was zero
 	// JP C, nn	- Absolute jump to 16-bit location if last result caused carry
 	// JP NZ, nn	- Absolute jump to 16-bit location if last result was not zero
@@ -138,11 +336,11 @@ func compileInstrJP(c *compiler.Compiler, operands ...[]Operand) error {
 	// JP (HL)	- Jump to 16-bit value pointed by HL
 }
 
-func compileInstrDI(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrDI(c *compiler.Compiler, operands ...Place) error {
 	// DI 	- DIsable interrupts
 }
 
-func compileInstrINC(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrINC(c *compiler.Compiler, operands ...Place) error {
 	// INC L	- Increment L
 	// INC C	- Increment C
 	// INC E	- Increment E
@@ -157,7 +355,7 @@ func compileInstrINC(c *compiler.Compiler, operands ...[]Operand) error {
 	// INC A	- Increment A
 }
 
-func compileInstrCP(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrCP(c *compiler.Compiler, operands ...Place) error {
 	// CP (HL)	- Compare value pointed by HL against A
 	// CP B	- Compare B against A
 	// CP H	- Compare H against A
@@ -169,7 +367,7 @@ func compileInstrCP(c *compiler.Compiler, operands ...[]Operand) error {
 	// CP D	- Compare D against A
 }
 
-func compileInstrRET(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrRET(c *compiler.Compiler, operands ...Place) error {
 	// RET NZ	- Return if last result was not zero
 	// RET NC	- Return if last result caused no carry
 	// RET 	- Return to calling routine
@@ -177,7 +375,7 @@ func compileInstrRET(c *compiler.Compiler, operands ...[]Operand) error {
 	// RET Z	- Return if last result was zero
 }
 
-func compileInstrRES(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrRES(c *compiler.Compiler, operands ...Place) error {
 	// RES 6, C	- Clear (reset) bit 6 of C
 	// RES 0, A	- Clear (reset) bit 0 of A
 	// RES 4, L	- Clear (reset) bit 4 of L
@@ -244,19 +442,19 @@ func compileInstrRES(c *compiler.Compiler, operands ...[]Operand) error {
 	// RES 6, H	- Clear (reset) bit 6 of H
 }
 
-func compileInstrCCF(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrCCF(c *compiler.Compiler, operands ...Place) error {
 	// CCF 	- Clear carry flag
 }
 
-func compileInstrRETI(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrRETI(c *compiler.Compiler, operands ...Place) error {
 	// RETI 	- Enable interrupts and return to calling routine
 }
 
-func compileInstrNOP(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrNOP(c *compiler.Compiler, operands ...Place) error {
 	// NOP 	- No Operation
 }
 
-func compileInstrBIT(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrBIT(c *compiler.Compiler, operands ...Place) error {
 	// BIT 0, (HL)	- Test bit 0 of value pointed by HL
 	// BIT 1, L	- Test bit 1 of L
 	// BIT 0, H	- Test bit 0 of H
@@ -323,7 +521,7 @@ func compileInstrBIT(c *compiler.Compiler, operands ...[]Operand) error {
 	// BIT 7, L	- Test bit 7 of L
 }
 
-func compileInstrAND(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrAND(c *compiler.Compiler, operands ...Place) error {
 	// AND L	- Logical AND L against A
 	// AND H	- Logical AND H against A
 	// AND C	- Logical AND C against A
@@ -335,13 +533,13 @@ func compileInstrAND(c *compiler.Compiler, operands ...[]Operand) error {
 	// AND (HL)	- Logical AND value pointed by HL against A
 }
 
-func compileInstrLDH(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrLDH(c *compiler.Compiler, operands ...Place) error {
 	// LDH (n), A	- Save A at address pointed to by (FF00h + 8-bit immediate)
 	// LDH A, (n)	- Load A from address pointed to by (FF00h + 8-bit immediate)
 	// LDH (C), A	- Save A at address pointed to by (FF00h + C)
 }
 
-func compileInstrLD(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrLD(c *compiler.Compiler, operands ...Place) error {
 	// LD (nn), SP	- Save SP to given address
 	// LD D, D	- Copy D to D
 	// LD H, L	- Copy L to H
@@ -427,11 +625,11 @@ func compileInstrLD(c *compiler.Compiler, operands ...[]Operand) error {
 	// LD H, B	- Copy B to H
 }
 
-func compileInstrSCF(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrSCF(c *compiler.Compiler, operands ...Place) error {
 	// SCF 	- Set carry flag
 }
 
-func compileInstrRLC(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrRLC(c *compiler.Compiler, operands ...Place) error {
 	// RLC H	- Rotate H left with carry
 	// RLC A	- Rotate A left with carry
 	// RLC E	- Rotate E left with carry
@@ -443,7 +641,7 @@ func compileInstrRLC(c *compiler.Compiler, operands ...[]Operand) error {
 	// RLC B	- Rotate B left with carry
 }
 
-func compileInstrSWAP(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrSWAP(c *compiler.Compiler, operands ...Place) error {
 	// SWAP E	- Swap nybbles in E
 	// SWAP B	- Swap nybbles in B
 	// SWAP H	- Swap nybbles in H
@@ -454,11 +652,11 @@ func compileInstrSWAP(c *compiler.Compiler, operands ...[]Operand) error {
 	// SWAP D	- Swap nybbles in D
 }
 
-func compileInstrCPL(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrCPL(c *compiler.Compiler, operands ...Place) error {
 	// CPL 	- Complement (logical NOT) on A
 }
 
-func compileInstrDEC(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrDEC(c *compiler.Compiler, operands ...Place) error {
 	// DEC SP	- Decrement 16-bit SP
 	// DEC A	- Decrement A
 	// DEC C	- Decrement C
@@ -473,7 +671,7 @@ func compileInstrDEC(c *compiler.Compiler, operands ...[]Operand) error {
 	// DEC H	- Decrement H
 }
 
-func compileInstrCALL(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrCALL(c *compiler.Compiler, operands ...Place) error {
 	// CALL Z, nn	- Call routine at 16-bit location if last result was zero
 	// CALL C, nn	- Call routine at 16-bit location if last result caused carry
 	// CALL NZ, nn	- Call routine at 16-bit location if last result was not zero
@@ -481,7 +679,7 @@ func compileInstrCALL(c *compiler.Compiler, operands ...[]Operand) error {
 	// CALL NC, nn	- Call routine at 16-bit location if last result caused no carry
 }
 
-func compileInstrSBC(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrSBC(c *compiler.Compiler, operands ...Place) error {
 	// SBC A, D	- Subtract D and carry flag from A
 	// SBC A, C	- Subtract C and carry flag from A
 	// SBC A, n	- Subtract 8-bit immediate and carry from A
@@ -493,11 +691,11 @@ func compileInstrSBC(c *compiler.Compiler, operands ...[]Operand) error {
 	// SBC A, L	- Subtract and carry flag L from A
 }
 
-func compileInstrDAA(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrDAA(c *compiler.Compiler, operands ...Place) error {
 	// DAA 	- Adjust A for BCD addition
 }
 
-func compileInstrRRC(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrRRC(c *compiler.Compiler, operands ...Place) error {
 	// RRC E	- Rotate E right with carry
 	// RRC L	- Rotate L right with carry
 	// RRC A	- Rotate A right with carry
@@ -509,7 +707,7 @@ func compileInstrRRC(c *compiler.Compiler, operands ...[]Operand) error {
 	// RRC (HL)	- Rotate value pointed by HL right with carry
 }
 
-func compileInstrSET(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrSET(c *compiler.Compiler, operands ...Place) error {
 	// SET 0, A	- Set bit 0 of A
 	// SET 5, L	- Set bit 5 of L
 	// SET 6, C	- Set bit 6 of C
@@ -576,7 +774,7 @@ func compileInstrSET(c *compiler.Compiler, operands ...[]Operand) error {
 	// SET 4, B	- Set bit 4 of B
 }
 
-func compileInstrJR(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrJR(c *compiler.Compiler, operands ...Place) error {
 	// JR NC, n	- Relative jump by signed immediate if last result caused no carry
 	// JR Z, n	- Relative jump by signed immediate if last result was zero
 	// JR n	- Relative jump by signed immediate
@@ -584,7 +782,7 @@ func compileInstrJR(c *compiler.Compiler, operands ...[]Operand) error {
 	// JR NZ, n	- Relative jump by signed immediate if last result was not zero
 }
 
-func compileInstrRR(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrRR(c *compiler.Compiler, operands ...Place) error {
 	// RR A	- Rotate A right
 	// RR B	- Rotate B right
 	// RR A	- Rotate A right
@@ -596,12 +794,12 @@ func compileInstrRR(c *compiler.Compiler, operands ...[]Operand) error {
 	// RR (HL)	- Rotate value pointed by HL right
 }
 
-func compileInstrLDD(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrLDD(c *compiler.Compiler, operands ...Place) error {
 	// LDD A, (HL)	- Load A from address pointed to by HL, and decrement HL
 	// LDD (HL), A	- Save A to address pointed by HL, and decrement HL
 }
 
-func compileInstrADC(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrADC(c *compiler.Compiler, operands ...Place) error {
 	// ADC A, A	- Add A and carry flag to A
 	// ADC A, n	- Add 8-bit immediate and carry to A
 	// ADC A, C	- Add C and carry flag to A
@@ -613,7 +811,7 @@ func compileInstrADC(c *compiler.Compiler, operands ...[]Operand) error {
 	// ADC A, B	- Add B and carry flag to A
 }
 
-func compileInstrXOR(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrXOR(c *compiler.Compiler, operands ...Place) error {
 	// XOR H	- Logical XOR H against A
 	// XOR E	- Logical XOR E against A
 	// XOR (HL)	- Logical XOR value pointed by HL against A
@@ -625,25 +823,25 @@ func compileInstrXOR(c *compiler.Compiler, operands ...[]Operand) error {
 	// XOR C	- Logical XOR C against A
 }
 
-func compileInstrPUSH(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrPUSH(c *compiler.Compiler, operands ...Place) error {
 	// PUSH AF	- Push 16-bit AF onto stack
 	// PUSH DE	- Push 16-bit DE onto stack
 	// PUSH HL	- Push 16-bit HL onto stack
 	// PUSH BC	- Push 16-bit BC onto stack
 }
 
-func compileInstrPOP(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrPOP(c *compiler.Compiler, operands ...Place) error {
 	// POP AF	- Pop 16-bit value from stack into AF
 	// POP DE	- Pop 16-bit value from stack into DE
 	// POP BC	- Pop 16-bit value from stack into BC
 	// POP HL	- Pop 16-bit value from stack into HL
 }
 
-func compileInstrEI(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrEI(c *compiler.Compiler, operands ...Place) error {
 	// EI 	- Enable interrupts
 }
 
-func compileInstrXX(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrXX(c *compiler.Compiler, operands ...Place) error {
 	// XX 	- Operation removed in this CPU
 	// XX 	- Operation removed in this CPU
 	// XX 	- Operation removed in this CPU
@@ -658,7 +856,7 @@ func compileInstrXX(c *compiler.Compiler, operands ...[]Operand) error {
 	// XX 	- Operation removed in this CPU
 }
 
-func compileInstrOR(c *compiler.Compiler, operands ...[]Operand) error {
+func compileInstrOR(c *compiler.Compiler, operands ...Place) error {
 	// OR n	- Logical OR 8-bit immediate against A
 	// OR A	- Logical OR A against A
 	// OR E	- Logical OR E against A
@@ -681,27 +879,27 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x00:
 		// RLC B
 		// Rotate B left with carry
-		compileInstrRLC(Register(B))
+		compileInstrRLC(B)
 	case 0x01:
 		// RLC C
 		// Rotate C left with carry
-		compileInstrRLC(Register(C))
+		compileInstrRLC(C)
 	case 0x02:
 		// RLC D
 		// Rotate D left with carry
-		compileInstrRLC(Register(D))
+		compileInstrRLC(D)
 	case 0x03:
 		// RLC E
 		// Rotate E left with carry
-		compileInstrRLC(Register(E))
+		compileInstrRLC(E)
 	case 0x04:
 		// RLC H
 		// Rotate H left with carry
-		compileInstrRLC(Register(H))
+		compileInstrRLC(H)
 	case 0x05:
 		// RLC L
 		// Rotate L left with carry
-		compileInstrRLC(Register(L))
+		compileInstrRLC(L)
 	case 0x06:
 		// RLC (HL)
 		// Rotate value pointed by HL left with carry
@@ -709,31 +907,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x07:
 		// RLC A
 		// Rotate A left with carry
-		compileInstrRLC(Register(A))
+		compileInstrRLC(A)
 	case 0x08:
 		// RRC B
 		// Rotate B right with carry
-		compileInstrRRC(Register(B))
+		compileInstrRRC(B)
 	case 0x09:
 		// RRC C
 		// Rotate C right with carry
-		compileInstrRRC(Register(C))
+		compileInstrRRC(C)
 	case 0x0A:
 		// RRC D
 		// Rotate D right with carry
-		compileInstrRRC(Register(D))
+		compileInstrRRC(D)
 	case 0x0B:
 		// RRC E
 		// Rotate E right with carry
-		compileInstrRRC(Register(E))
+		compileInstrRRC(E)
 	case 0x0C:
 		// RRC H
 		// Rotate H right with carry
-		compileInstrRRC(Register(H))
+		compileInstrRRC(H)
 	case 0x0D:
 		// RRC L
 		// Rotate L right with carry
-		compileInstrRRC(Register(L))
+		compileInstrRRC(L)
 	case 0x0E:
 		// RRC (HL)
 		// Rotate value pointed by HL right with carry
@@ -741,31 +939,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x0F:
 		// RRC A
 		// Rotate A right with carry
-		compileInstrRRC(Register(A))
+		compileInstrRRC(A)
 	case 0x10:
 		// RL B
 		// Rotate B left
-		compileInstrRL(Register(B))
+		compileInstrRL(B)
 	case 0x11:
 		// RL C
 		// Rotate C left
-		compileInstrRL(Register(C))
+		compileInstrRL(C)
 	case 0x12:
 		// RL D
 		// Rotate D left
-		compileInstrRL(Register(D))
+		compileInstrRL(D)
 	case 0x13:
 		// RL E
 		// Rotate E left
-		compileInstrRL(Register(E))
+		compileInstrRL(E)
 	case 0x14:
 		// RL H
 		// Rotate H left
-		compileInstrRL(Register(H))
+		compileInstrRL(H)
 	case 0x15:
 		// RL L
 		// Rotate L left
-		compileInstrRL(Register(L))
+		compileInstrRL(L)
 	case 0x16:
 		// RL (HL)
 		// Rotate value pointed by HL left
@@ -773,31 +971,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x17:
 		// RL A
 		// Rotate A left
-		compileInstrRL(Register(A))
+		compileInstrRL(A)
 	case 0x18:
 		// RR B
 		// Rotate B right
-		compileInstrRR(Register(B))
+		compileInstrRR(B)
 	case 0x19:
 		// RR C
 		// Rotate C right
-		compileInstrRR(Register(C))
+		compileInstrRR(C)
 	case 0x1A:
 		// RR D
 		// Rotate D right
-		compileInstrRR(Register(D))
+		compileInstrRR(D)
 	case 0x1B:
 		// RR E
 		// Rotate E right
-		compileInstrRR(Register(E))
+		compileInstrRR(E)
 	case 0x1C:
 		// RR H
 		// Rotate H right
-		compileInstrRR(Register(H))
+		compileInstrRR(H)
 	case 0x1D:
 		// RR L
 		// Rotate L right
-		compileInstrRR(Register(L))
+		compileInstrRR(L)
 	case 0x1E:
 		// RR (HL)
 		// Rotate value pointed by HL right
@@ -805,31 +1003,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x1F:
 		// RR A
 		// Rotate A right
-		compileInstrRR(Register(A))
+		compileInstrRR(A)
 	case 0x20:
 		// SLA B
 		// Shift B left preserving sign
-		compileInstrSLA(Register(B))
+		compileInstrSLA(B)
 	case 0x21:
 		// SLA C
 		// Shift C left preserving sign
-		compileInstrSLA(Register(C))
+		compileInstrSLA(C)
 	case 0x22:
 		// SLA D
 		// Shift D left preserving sign
-		compileInstrSLA(Register(D))
+		compileInstrSLA(D)
 	case 0x23:
 		// SLA E
 		// Shift E left preserving sign
-		compileInstrSLA(Register(E))
+		compileInstrSLA(E)
 	case 0x24:
 		// SLA H
 		// Shift H left preserving sign
-		compileInstrSLA(Register(H))
+		compileInstrSLA(H)
 	case 0x25:
 		// SLA L
 		// Shift L left preserving sign
-		compileInstrSLA(Register(L))
+		compileInstrSLA(L)
 	case 0x26:
 		// SLA (HL)
 		// Shift value pointed by HL left preserving sign
@@ -837,31 +1035,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x27:
 		// SLA A
 		// Shift A left preserving sign
-		compileInstrSLA(Register(A))
+		compileInstrSLA(A)
 	case 0x28:
 		// SRA B
 		// Shift B right preserving sign
-		compileInstrSRA(Register(B))
+		compileInstrSRA(B)
 	case 0x29:
 		// SRA C
 		// Shift C right preserving sign
-		compileInstrSRA(Register(C))
+		compileInstrSRA(C)
 	case 0x2A:
 		// SRA D
 		// Shift D right preserving sign
-		compileInstrSRA(Register(D))
+		compileInstrSRA(D)
 	case 0x2B:
 		// SRA E
 		// Shift E right preserving sign
-		compileInstrSRA(Register(E))
+		compileInstrSRA(E)
 	case 0x2C:
 		// SRA H
 		// Shift H right preserving sign
-		compileInstrSRA(Register(H))
+		compileInstrSRA(H)
 	case 0x2D:
 		// SRA L
 		// Shift L right preserving sign
-		compileInstrSRA(Register(L))
+		compileInstrSRA(L)
 	case 0x2E:
 		// SRA (HL)
 		// Shift value pointed by HL right preserving sign
@@ -869,31 +1067,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x2F:
 		// SRA A
 		// Shift A right preserving sign
-		compileInstrSRA(Register(A))
+		compileInstrSRA(A)
 	case 0x30:
 		// SWAP B
 		// Swap nybbles in B
-		compileInstrSWAP(Register(B))
+		compileInstrSWAP(B)
 	case 0x31:
 		// SWAP C
 		// Swap nybbles in C
-		compileInstrSWAP(Register(C))
+		compileInstrSWAP(C)
 	case 0x32:
 		// SWAP D
 		// Swap nybbles in D
-		compileInstrSWAP(Register(D))
+		compileInstrSWAP(D)
 	case 0x33:
 		// SWAP E
 		// Swap nybbles in E
-		compileInstrSWAP(Register(E))
+		compileInstrSWAP(E)
 	case 0x34:
 		// SWAP H
 		// Swap nybbles in H
-		compileInstrSWAP(Register(H))
+		compileInstrSWAP(H)
 	case 0x35:
 		// SWAP L
 		// Swap nybbles in L
-		compileInstrSWAP(Register(L))
+		compileInstrSWAP(L)
 	case 0x36:
 		// SWAP (HL)
 		// Swap nybbles in value pointed by HL
@@ -901,31 +1099,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x37:
 		// SWAP A
 		// Swap nybbles in A
-		compileInstrSWAP(Register(A))
+		compileInstrSWAP(A)
 	case 0x38:
 		// SRL B
 		// Shift B right
-		compileInstrSRL(Register(B))
+		compileInstrSRL(B)
 	case 0x39:
 		// SRL C
 		// Shift C right
-		compileInstrSRL(Register(C))
+		compileInstrSRL(C)
 	case 0x3A:
 		// SRL D
 		// Shift D right
-		compileInstrSRL(Register(D))
+		compileInstrSRL(D)
 	case 0x3B:
 		// SRL E
 		// Shift E right
-		compileInstrSRL(Register(E))
+		compileInstrSRL(E)
 	case 0x3C:
 		// SRL H
 		// Shift H right
-		compileInstrSRL(Register(H))
+		compileInstrSRL(H)
 	case 0x3D:
 		// SRL L
 		// Shift L right
-		compileInstrSRL(Register(L))
+		compileInstrSRL(L)
 	case 0x3E:
 		// SRL (HL)
 		// Shift value pointed by HL right
@@ -933,31 +1131,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x3F:
 		// SRL A
 		// Shift A right
-		compileInstrSRL(Register(A))
+		compileInstrSRL(A)
 	case 0x40:
 		// BIT 0, B
 		// Test bit 0 of B
-		compileInstrBIT(StaticParam(0), Register(B))
+		compileInstrBIT(StaticParam(0), B)
 	case 0x41:
 		// BIT 0, C
 		// Test bit 0 of C
-		compileInstrBIT(StaticParam(0), Register(C))
+		compileInstrBIT(StaticParam(0), C)
 	case 0x42:
 		// BIT 0, D
 		// Test bit 0 of D
-		compileInstrBIT(StaticParam(0), Register(D))
+		compileInstrBIT(StaticParam(0), D)
 	case 0x43:
 		// BIT 0, E
 		// Test bit 0 of E
-		compileInstrBIT(StaticParam(0), Register(E))
+		compileInstrBIT(StaticParam(0), E)
 	case 0x44:
 		// BIT 0, H
 		// Test bit 0 of H
-		compileInstrBIT(StaticParam(0), Register(H))
+		compileInstrBIT(StaticParam(0), H)
 	case 0x45:
 		// BIT 0, L
 		// Test bit 0 of L
-		compileInstrBIT(StaticParam(0), Register(L))
+		compileInstrBIT(StaticParam(0), L)
 	case 0x46:
 		// BIT 0, (HL)
 		// Test bit 0 of value pointed by HL
@@ -965,31 +1163,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x47:
 		// BIT 0, A
 		// Test bit 0 of A
-		compileInstrBIT(StaticParam(0), Register(A))
+		compileInstrBIT(StaticParam(0), A)
 	case 0x48:
 		// BIT 1, B
 		// Test bit 1 of B
-		compileInstrBIT(StaticParam(1), Register(B))
+		compileInstrBIT(StaticParam(1), B)
 	case 0x49:
 		// BIT 1, C
 		// Test bit 1 of C
-		compileInstrBIT(StaticParam(1), Register(C))
+		compileInstrBIT(StaticParam(1), C)
 	case 0x4A:
 		// BIT 1, D
 		// Test bit 1 of D
-		compileInstrBIT(StaticParam(1), Register(D))
+		compileInstrBIT(StaticParam(1), D)
 	case 0x4B:
 		// BIT 1, E
 		// Test bit 1 of E
-		compileInstrBIT(StaticParam(1), Register(E))
+		compileInstrBIT(StaticParam(1), E)
 	case 0x4C:
 		// BIT 1, H
 		// Test bit 1 of H
-		compileInstrBIT(StaticParam(1), Register(H))
+		compileInstrBIT(StaticParam(1), H)
 	case 0x4D:
 		// BIT 1, L
 		// Test bit 1 of L
-		compileInstrBIT(StaticParam(1), Register(L))
+		compileInstrBIT(StaticParam(1), L)
 	case 0x4E:
 		// BIT 1, (HL)
 		// Test bit 1 of value pointed by HL
@@ -997,31 +1195,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x4F:
 		// BIT 1, A
 		// Test bit 1 of A
-		compileInstrBIT(StaticParam(1), Register(A))
+		compileInstrBIT(StaticParam(1), A)
 	case 0x50:
 		// BIT 2, B
 		// Test bit 2 of B
-		compileInstrBIT(StaticParam(2), Register(B))
+		compileInstrBIT(StaticParam(2), B)
 	case 0x51:
 		// BIT 2, C
 		// Test bit 2 of C
-		compileInstrBIT(StaticParam(2), Register(C))
+		compileInstrBIT(StaticParam(2), C)
 	case 0x52:
 		// BIT 2, D
 		// Test bit 2 of D
-		compileInstrBIT(StaticParam(2), Register(D))
+		compileInstrBIT(StaticParam(2), D)
 	case 0x53:
 		// BIT 2, E
 		// Test bit 2 of E
-		compileInstrBIT(StaticParam(2), Register(E))
+		compileInstrBIT(StaticParam(2), E)
 	case 0x54:
 		// BIT 2, H
 		// Test bit 2 of H
-		compileInstrBIT(StaticParam(2), Register(H))
+		compileInstrBIT(StaticParam(2), H)
 	case 0x55:
 		// BIT 2, L
 		// Test bit 2 of L
-		compileInstrBIT(StaticParam(2), Register(L))
+		compileInstrBIT(StaticParam(2), L)
 	case 0x56:
 		// BIT 2, (HL)
 		// Test bit 2 of value pointed by HL
@@ -1029,31 +1227,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x57:
 		// BIT 2, A
 		// Test bit 2 of A
-		compileInstrBIT(StaticParam(2), Register(A))
+		compileInstrBIT(StaticParam(2), A)
 	case 0x58:
 		// BIT 3, B
 		// Test bit 3 of B
-		compileInstrBIT(StaticParam(3), Register(B))
+		compileInstrBIT(StaticParam(3), B)
 	case 0x59:
 		// BIT 3, C
 		// Test bit 3 of C
-		compileInstrBIT(StaticParam(3), Register(C))
+		compileInstrBIT(StaticParam(3), C)
 	case 0x5A:
 		// BIT 3, D
 		// Test bit 3 of D
-		compileInstrBIT(StaticParam(3), Register(D))
+		compileInstrBIT(StaticParam(3), D)
 	case 0x5B:
 		// BIT 3, E
 		// Test bit 3 of E
-		compileInstrBIT(StaticParam(3), Register(E))
+		compileInstrBIT(StaticParam(3), E)
 	case 0x5C:
 		// BIT 3, H
 		// Test bit 3 of H
-		compileInstrBIT(StaticParam(3), Register(H))
+		compileInstrBIT(StaticParam(3), H)
 	case 0x5D:
 		// BIT 3, L
 		// Test bit 3 of L
-		compileInstrBIT(StaticParam(3), Register(L))
+		compileInstrBIT(StaticParam(3), L)
 	case 0x5E:
 		// BIT 3, (HL)
 		// Test bit 3 of value pointed by HL
@@ -1061,31 +1259,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x5F:
 		// BIT 3, A
 		// Test bit 3 of A
-		compileInstrBIT(StaticParam(3), Register(A))
+		compileInstrBIT(StaticParam(3), A)
 	case 0x60:
 		// BIT 4, B
 		// Test bit 4 of B
-		compileInstrBIT(StaticParam(4), Register(B))
+		compileInstrBIT(StaticParam(4), B)
 	case 0x61:
 		// BIT 4, C
 		// Test bit 4 of C
-		compileInstrBIT(StaticParam(4), Register(C))
+		compileInstrBIT(StaticParam(4), C)
 	case 0x62:
 		// BIT 4, D
 		// Test bit 4 of D
-		compileInstrBIT(StaticParam(4), Register(D))
+		compileInstrBIT(StaticParam(4), D)
 	case 0x63:
 		// BIT 4, E
 		// Test bit 4 of E
-		compileInstrBIT(StaticParam(4), Register(E))
+		compileInstrBIT(StaticParam(4), E)
 	case 0x64:
 		// BIT 4, H
 		// Test bit 4 of H
-		compileInstrBIT(StaticParam(4), Register(H))
+		compileInstrBIT(StaticParam(4), H)
 	case 0x65:
 		// BIT 4, L
 		// Test bit 4 of L
-		compileInstrBIT(StaticParam(4), Register(L))
+		compileInstrBIT(StaticParam(4), L)
 	case 0x66:
 		// BIT 4, (HL)
 		// Test bit 4 of value pointed by HL
@@ -1093,31 +1291,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x67:
 		// BIT 4, A
 		// Test bit 4 of A
-		compileInstrBIT(StaticParam(4), Register(A))
+		compileInstrBIT(StaticParam(4), A)
 	case 0x68:
 		// BIT 5, B
 		// Test bit 5 of B
-		compileInstrBIT(StaticParam(5), Register(B))
+		compileInstrBIT(StaticParam(5), B)
 	case 0x69:
 		// BIT 5, C
 		// Test bit 5 of C
-		compileInstrBIT(StaticParam(5), Register(C))
+		compileInstrBIT(StaticParam(5), C)
 	case 0x6A:
 		// BIT 5, D
 		// Test bit 5 of D
-		compileInstrBIT(StaticParam(5), Register(D))
+		compileInstrBIT(StaticParam(5), D)
 	case 0x6B:
 		// BIT 5, E
 		// Test bit 5 of E
-		compileInstrBIT(StaticParam(5), Register(E))
+		compileInstrBIT(StaticParam(5), E)
 	case 0x6C:
 		// BIT 5, H
 		// Test bit 5 of H
-		compileInstrBIT(StaticParam(5), Register(H))
+		compileInstrBIT(StaticParam(5), H)
 	case 0x6D:
 		// BIT 5, L
 		// Test bit 5 of L
-		compileInstrBIT(StaticParam(5), Register(L))
+		compileInstrBIT(StaticParam(5), L)
 	case 0x6E:
 		// BIT 5, (HL)
 		// Test bit 5 of value pointed by HL
@@ -1125,31 +1323,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x6F:
 		// BIT 5, A
 		// Test bit 5 of A
-		compileInstrBIT(StaticParam(5), Register(A))
+		compileInstrBIT(StaticParam(5), A)
 	case 0x70:
 		// BIT 6, B
 		// Test bit 6 of B
-		compileInstrBIT(StaticParam(6), Register(B))
+		compileInstrBIT(StaticParam(6), B)
 	case 0x71:
 		// BIT 6, C
 		// Test bit 6 of C
-		compileInstrBIT(StaticParam(6), Register(C))
+		compileInstrBIT(StaticParam(6), C)
 	case 0x72:
 		// BIT 6, D
 		// Test bit 6 of D
-		compileInstrBIT(StaticParam(6), Register(D))
+		compileInstrBIT(StaticParam(6), D)
 	case 0x73:
 		// BIT 6, E
 		// Test bit 6 of E
-		compileInstrBIT(StaticParam(6), Register(E))
+		compileInstrBIT(StaticParam(6), E)
 	case 0x74:
 		// BIT 6, H
 		// Test bit 6 of H
-		compileInstrBIT(StaticParam(6), Register(H))
+		compileInstrBIT(StaticParam(6), H)
 	case 0x75:
 		// BIT 6, L
 		// Test bit 6 of L
-		compileInstrBIT(StaticParam(6), Register(L))
+		compileInstrBIT(StaticParam(6), L)
 	case 0x76:
 		// BIT 6, (HL)
 		// Test bit 6 of value pointed by HL
@@ -1157,31 +1355,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x77:
 		// BIT 6, A
 		// Test bit 6 of A
-		compileInstrBIT(StaticParam(6), Register(A))
+		compileInstrBIT(StaticParam(6), A)
 	case 0x78:
 		// BIT 7, B
 		// Test bit 7 of B
-		compileInstrBIT(StaticParam(7), Register(B))
+		compileInstrBIT(StaticParam(7), B)
 	case 0x79:
 		// BIT 7, C
 		// Test bit 7 of C
-		compileInstrBIT(StaticParam(7), Register(C))
+		compileInstrBIT(StaticParam(7), C)
 	case 0x7A:
 		// BIT 7, D
 		// Test bit 7 of D
-		compileInstrBIT(StaticParam(7), Register(D))
+		compileInstrBIT(StaticParam(7), D)
 	case 0x7B:
 		// BIT 7, E
 		// Test bit 7 of E
-		compileInstrBIT(StaticParam(7), Register(E))
+		compileInstrBIT(StaticParam(7), E)
 	case 0x7C:
 		// BIT 7, H
 		// Test bit 7 of H
-		compileInstrBIT(StaticParam(7), Register(H))
+		compileInstrBIT(StaticParam(7), H)
 	case 0x7D:
 		// BIT 7, L
 		// Test bit 7 of L
-		compileInstrBIT(StaticParam(7), Register(L))
+		compileInstrBIT(StaticParam(7), L)
 	case 0x7E:
 		// BIT 7, (HL)
 		// Test bit 7 of value pointed by HL
@@ -1189,31 +1387,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x7F:
 		// BIT 7, A
 		// Test bit 7 of A
-		compileInstrBIT(StaticParam(7), Register(A))
+		compileInstrBIT(StaticParam(7), A)
 	case 0x80:
 		// RES 0, B
 		// Clear (reset) bit 0 of B
-		compileInstrRES(StaticParam(0), Register(B))
+		compileInstrRES(StaticParam(0), B)
 	case 0x81:
 		// RES 0, C
 		// Clear (reset) bit 0 of C
-		compileInstrRES(StaticParam(0), Register(C))
+		compileInstrRES(StaticParam(0), C)
 	case 0x82:
 		// RES 0, D
 		// Clear (reset) bit 0 of D
-		compileInstrRES(StaticParam(0), Register(D))
+		compileInstrRES(StaticParam(0), D)
 	case 0x83:
 		// RES 0, E
 		// Clear (reset) bit 0 of E
-		compileInstrRES(StaticParam(0), Register(E))
+		compileInstrRES(StaticParam(0), E)
 	case 0x84:
 		// RES 0, H
 		// Clear (reset) bit 0 of H
-		compileInstrRES(StaticParam(0), Register(H))
+		compileInstrRES(StaticParam(0), H)
 	case 0x85:
 		// RES 0, L
 		// Clear (reset) bit 0 of L
-		compileInstrRES(StaticParam(0), Register(L))
+		compileInstrRES(StaticParam(0), L)
 	case 0x86:
 		// RES 0, (HL)
 		// Clear (reset) bit 0 of value pointed by HL
@@ -1221,31 +1419,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x87:
 		// RES 0, A
 		// Clear (reset) bit 0 of A
-		compileInstrRES(StaticParam(0), Register(A))
+		compileInstrRES(StaticParam(0), A)
 	case 0x88:
 		// RES 1, B
 		// Clear (reset) bit 1 of B
-		compileInstrRES(StaticParam(1), Register(B))
+		compileInstrRES(StaticParam(1), B)
 	case 0x89:
 		// RES 1, C
 		// Clear (reset) bit 1 of C
-		compileInstrRES(StaticParam(1), Register(C))
+		compileInstrRES(StaticParam(1), C)
 	case 0x8A:
 		// RES 1, D
 		// Clear (reset) bit 1 of D
-		compileInstrRES(StaticParam(1), Register(D))
+		compileInstrRES(StaticParam(1), D)
 	case 0x8B:
 		// RES 1, E
 		// Clear (reset) bit 1 of E
-		compileInstrRES(StaticParam(1), Register(E))
+		compileInstrRES(StaticParam(1), E)
 	case 0x8C:
 		// RES 1, H
 		// Clear (reset) bit 1 of H
-		compileInstrRES(StaticParam(1), Register(H))
+		compileInstrRES(StaticParam(1), H)
 	case 0x8D:
 		// RES 1, L
 		// Clear (reset) bit 1 of L
-		compileInstrRES(StaticParam(1), Register(L))
+		compileInstrRES(StaticParam(1), L)
 	case 0x8E:
 		// RES 1, (HL)
 		// Clear (reset) bit 1 of value pointed by HL
@@ -1253,31 +1451,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x8F:
 		// RES 1, A
 		// Clear (reset) bit 1 of A
-		compileInstrRES(StaticParam(1), Register(A))
+		compileInstrRES(StaticParam(1), A)
 	case 0x90:
 		// RES 2, B
 		// Clear (reset) bit 2 of B
-		compileInstrRES(StaticParam(2), Register(B))
+		compileInstrRES(StaticParam(2), B)
 	case 0x91:
 		// RES 2, C
 		// Clear (reset) bit 2 of C
-		compileInstrRES(StaticParam(2), Register(C))
+		compileInstrRES(StaticParam(2), C)
 	case 0x92:
 		// RES 2, D
 		// Clear (reset) bit 2 of D
-		compileInstrRES(StaticParam(2), Register(D))
+		compileInstrRES(StaticParam(2), D)
 	case 0x93:
 		// RES 2, E
 		// Clear (reset) bit 2 of E
-		compileInstrRES(StaticParam(2), Register(E))
+		compileInstrRES(StaticParam(2), E)
 	case 0x94:
 		// RES 2, H
 		// Clear (reset) bit 2 of H
-		compileInstrRES(StaticParam(2), Register(H))
+		compileInstrRES(StaticParam(2), H)
 	case 0x95:
 		// RES 2, L
 		// Clear (reset) bit 2 of L
-		compileInstrRES(StaticParam(2), Register(L))
+		compileInstrRES(StaticParam(2), L)
 	case 0x96:
 		// RES 2, (HL)
 		// Clear (reset) bit 2 of value pointed by HL
@@ -1285,31 +1483,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x97:
 		// RES 2, A
 		// Clear (reset) bit 2 of A
-		compileInstrRES(StaticParam(2), Register(A))
+		compileInstrRES(StaticParam(2), A)
 	case 0x98:
 		// RES 3, B
 		// Clear (reset) bit 3 of B
-		compileInstrRES(StaticParam(3), Register(B))
+		compileInstrRES(StaticParam(3), B)
 	case 0x99:
 		// RES 3, C
 		// Clear (reset) bit 3 of C
-		compileInstrRES(StaticParam(3), Register(C))
+		compileInstrRES(StaticParam(3), C)
 	case 0x9A:
 		// RES 3, D
 		// Clear (reset) bit 3 of D
-		compileInstrRES(StaticParam(3), Register(D))
+		compileInstrRES(StaticParam(3), D)
 	case 0x9B:
 		// RES 3, E
 		// Clear (reset) bit 3 of E
-		compileInstrRES(StaticParam(3), Register(E))
+		compileInstrRES(StaticParam(3), E)
 	case 0x9C:
 		// RES 3, H
 		// Clear (reset) bit 3 of H
-		compileInstrRES(StaticParam(3), Register(H))
+		compileInstrRES(StaticParam(3), H)
 	case 0x9D:
 		// RES 3, L
 		// Clear (reset) bit 3 of L
-		compileInstrRES(StaticParam(3), Register(L))
+		compileInstrRES(StaticParam(3), L)
 	case 0x9E:
 		// RES 3, (HL)
 		// Clear (reset) bit 3 of value pointed by HL
@@ -1317,31 +1515,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0x9F:
 		// RES 3, A
 		// Clear (reset) bit 3 of A
-		compileInstrRES(StaticParam(3), Register(A))
+		compileInstrRES(StaticParam(3), A)
 	case 0xA0:
 		// RES 4, B
 		// Clear (reset) bit 4 of B
-		compileInstrRES(StaticParam(4), Register(B))
+		compileInstrRES(StaticParam(4), B)
 	case 0xA1:
 		// RES 4, C
 		// Clear (reset) bit 4 of C
-		compileInstrRES(StaticParam(4), Register(C))
+		compileInstrRES(StaticParam(4), C)
 	case 0xA2:
 		// RES 4, D
 		// Clear (reset) bit 4 of D
-		compileInstrRES(StaticParam(4), Register(D))
+		compileInstrRES(StaticParam(4), D)
 	case 0xA3:
 		// RES 4, E
 		// Clear (reset) bit 4 of E
-		compileInstrRES(StaticParam(4), Register(E))
+		compileInstrRES(StaticParam(4), E)
 	case 0xA4:
 		// RES 4, H
 		// Clear (reset) bit 4 of H
-		compileInstrRES(StaticParam(4), Register(H))
+		compileInstrRES(StaticParam(4), H)
 	case 0xA5:
 		// RES 4, L
 		// Clear (reset) bit 4 of L
-		compileInstrRES(StaticParam(4), Register(L))
+		compileInstrRES(StaticParam(4), L)
 	case 0xA6:
 		// RES 4, (HL)
 		// Clear (reset) bit 4 of value pointed by HL
@@ -1349,31 +1547,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xA7:
 		// RES 4, A
 		// Clear (reset) bit 4 of A
-		compileInstrRES(StaticParam(4), Register(A))
+		compileInstrRES(StaticParam(4), A)
 	case 0xA8:
 		// RES 5, B
 		// Clear (reset) bit 5 of B
-		compileInstrRES(StaticParam(5), Register(B))
+		compileInstrRES(StaticParam(5), B)
 	case 0xA9:
 		// RES 5, C
 		// Clear (reset) bit 5 of C
-		compileInstrRES(StaticParam(5), Register(C))
+		compileInstrRES(StaticParam(5), C)
 	case 0xAA:
 		// RES 5, D
 		// Clear (reset) bit 5 of D
-		compileInstrRES(StaticParam(5), Register(D))
+		compileInstrRES(StaticParam(5), D)
 	case 0xAB:
 		// RES 5, E
 		// Clear (reset) bit 5 of E
-		compileInstrRES(StaticParam(5), Register(E))
+		compileInstrRES(StaticParam(5), E)
 	case 0xAC:
 		// RES 5, H
 		// Clear (reset) bit 5 of H
-		compileInstrRES(StaticParam(5), Register(H))
+		compileInstrRES(StaticParam(5), H)
 	case 0xAD:
 		// RES 5, L
 		// Clear (reset) bit 5 of L
-		compileInstrRES(StaticParam(5), Register(L))
+		compileInstrRES(StaticParam(5), L)
 	case 0xAE:
 		// RES 5, (HL)
 		// Clear (reset) bit 5 of value pointed by HL
@@ -1381,31 +1579,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xAF:
 		// RES 5, A
 		// Clear (reset) bit 5 of A
-		compileInstrRES(StaticParam(5), Register(A))
+		compileInstrRES(StaticParam(5), A)
 	case 0xB0:
 		// RES 6, B
 		// Clear (reset) bit 6 of B
-		compileInstrRES(StaticParam(6), Register(B))
+		compileInstrRES(StaticParam(6), B)
 	case 0xB1:
 		// RES 6, C
 		// Clear (reset) bit 6 of C
-		compileInstrRES(StaticParam(6), Register(C))
+		compileInstrRES(StaticParam(6), C)
 	case 0xB2:
 		// RES 6, D
 		// Clear (reset) bit 6 of D
-		compileInstrRES(StaticParam(6), Register(D))
+		compileInstrRES(StaticParam(6), D)
 	case 0xB3:
 		// RES 6, E
 		// Clear (reset) bit 6 of E
-		compileInstrRES(StaticParam(6), Register(E))
+		compileInstrRES(StaticParam(6), E)
 	case 0xB4:
 		// RES 6, H
 		// Clear (reset) bit 6 of H
-		compileInstrRES(StaticParam(6), Register(H))
+		compileInstrRES(StaticParam(6), H)
 	case 0xB5:
 		// RES 6, L
 		// Clear (reset) bit 6 of L
-		compileInstrRES(StaticParam(6), Register(L))
+		compileInstrRES(StaticParam(6), L)
 	case 0xB6:
 		// RES 6, (HL)
 		// Clear (reset) bit 6 of value pointed by HL
@@ -1413,31 +1611,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xB7:
 		// RES 6, A
 		// Clear (reset) bit 6 of A
-		compileInstrRES(StaticParam(6), Register(A))
+		compileInstrRES(StaticParam(6), A)
 	case 0xB8:
 		// RES 7, B
 		// Clear (reset) bit 7 of B
-		compileInstrRES(StaticParam(7), Register(B))
+		compileInstrRES(StaticParam(7), B)
 	case 0xB9:
 		// RES 7, C
 		// Clear (reset) bit 7 of C
-		compileInstrRES(StaticParam(7), Register(C))
+		compileInstrRES(StaticParam(7), C)
 	case 0xBA:
 		// RES 7, D
 		// Clear (reset) bit 7 of D
-		compileInstrRES(StaticParam(7), Register(D))
+		compileInstrRES(StaticParam(7), D)
 	case 0xBB:
 		// RES 7, E
 		// Clear (reset) bit 7 of E
-		compileInstrRES(StaticParam(7), Register(E))
+		compileInstrRES(StaticParam(7), E)
 	case 0xBC:
 		// RES 7, H
 		// Clear (reset) bit 7 of H
-		compileInstrRES(StaticParam(7), Register(H))
+		compileInstrRES(StaticParam(7), H)
 	case 0xBD:
 		// RES 7, L
 		// Clear (reset) bit 7 of L
-		compileInstrRES(StaticParam(7), Register(L))
+		compileInstrRES(StaticParam(7), L)
 	case 0xBE:
 		// RES 7, (HL)
 		// Clear (reset) bit 7 of value pointed by HL
@@ -1445,31 +1643,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xBF:
 		// RES 7, A
 		// Clear (reset) bit 7 of A
-		compileInstrRES(StaticParam(7), Register(A))
+		compileInstrRES(StaticParam(7), A)
 	case 0xC0:
 		// SET 0, B
 		// Set bit 0 of B
-		compileInstrSET(StaticParam(0), Register(B))
+		compileInstrSET(StaticParam(0), B)
 	case 0xC1:
 		// SET 0, C
 		// Set bit 0 of C
-		compileInstrSET(StaticParam(0), Register(C))
+		compileInstrSET(StaticParam(0), C)
 	case 0xC2:
 		// SET 0, D
 		// Set bit 0 of D
-		compileInstrSET(StaticParam(0), Register(D))
+		compileInstrSET(StaticParam(0), D)
 	case 0xC3:
 		// SET 0, E
 		// Set bit 0 of E
-		compileInstrSET(StaticParam(0), Register(E))
+		compileInstrSET(StaticParam(0), E)
 	case 0xC4:
 		// SET 0, H
 		// Set bit 0 of H
-		compileInstrSET(StaticParam(0), Register(H))
+		compileInstrSET(StaticParam(0), H)
 	case 0xC5:
 		// SET 0, L
 		// Set bit 0 of L
-		compileInstrSET(StaticParam(0), Register(L))
+		compileInstrSET(StaticParam(0), L)
 	case 0xC6:
 		// SET 0, (HL)
 		// Set bit 0 of value pointed by HL
@@ -1477,31 +1675,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xC7:
 		// SET 0, A
 		// Set bit 0 of A
-		compileInstrSET(StaticParam(0), Register(A))
+		compileInstrSET(StaticParam(0), A)
 	case 0xC8:
 		// SET 1, B
 		// Set bit 1 of B
-		compileInstrSET(StaticParam(1), Register(B))
+		compileInstrSET(StaticParam(1), B)
 	case 0xC9:
 		// SET 1, C
 		// Set bit 1 of C
-		compileInstrSET(StaticParam(1), Register(C))
+		compileInstrSET(StaticParam(1), C)
 	case 0xCA:
 		// SET 1, D
 		// Set bit 1 of D
-		compileInstrSET(StaticParam(1), Register(D))
+		compileInstrSET(StaticParam(1), D)
 	case 0xCB:
 		// SET 1, E
 		// Set bit 1 of E
-		compileInstrSET(StaticParam(1), Register(E))
+		compileInstrSET(StaticParam(1), E)
 	case 0xCC:
 		// SET 1, H
 		// Set bit 1 of H
-		compileInstrSET(StaticParam(1), Register(H))
+		compileInstrSET(StaticParam(1), H)
 	case 0xCD:
 		// SET 1, L
 		// Set bit 1 of L
-		compileInstrSET(StaticParam(1), Register(L))
+		compileInstrSET(StaticParam(1), L)
 	case 0xCE:
 		// SET 1, (HL)
 		// Set bit 1 of value pointed by HL
@@ -1509,31 +1707,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xCF:
 		// SET 1, A
 		// Set bit 1 of A
-		compileInstrSET(StaticParam(1), Register(A))
+		compileInstrSET(StaticParam(1), A)
 	case 0xD0:
 		// SET 2, B
 		// Set bit 2 of B
-		compileInstrSET(StaticParam(2), Register(B))
+		compileInstrSET(StaticParam(2), B)
 	case 0xD1:
 		// SET 2, C
 		// Set bit 2 of C
-		compileInstrSET(StaticParam(2), Register(C))
+		compileInstrSET(StaticParam(2), C)
 	case 0xD2:
 		// SET 2, D
 		// Set bit 2 of D
-		compileInstrSET(StaticParam(2), Register(D))
+		compileInstrSET(StaticParam(2), D)
 	case 0xD3:
 		// SET 2, E
 		// Set bit 2 of E
-		compileInstrSET(StaticParam(2), Register(E))
+		compileInstrSET(StaticParam(2), E)
 	case 0xD4:
 		// SET 2, H
 		// Set bit 2 of H
-		compileInstrSET(StaticParam(2), Register(H))
+		compileInstrSET(StaticParam(2), H)
 	case 0xD5:
 		// SET 2, L
 		// Set bit 2 of L
-		compileInstrSET(StaticParam(2), Register(L))
+		compileInstrSET(StaticParam(2), L)
 	case 0xD6:
 		// SET 2, (HL)
 		// Set bit 2 of value pointed by HL
@@ -1541,31 +1739,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xD7:
 		// SET 2, A
 		// Set bit 2 of A
-		compileInstrSET(StaticParam(2), Register(A))
+		compileInstrSET(StaticParam(2), A)
 	case 0xD8:
 		// SET 3, B
 		// Set bit 3 of B
-		compileInstrSET(StaticParam(3), Register(B))
+		compileInstrSET(StaticParam(3), B)
 	case 0xD9:
 		// SET 3, C
 		// Set bit 3 of C
-		compileInstrSET(StaticParam(3), Register(C))
+		compileInstrSET(StaticParam(3), C)
 	case 0xDA:
 		// SET 3, D
 		// Set bit 3 of D
-		compileInstrSET(StaticParam(3), Register(D))
+		compileInstrSET(StaticParam(3), D)
 	case 0xDB:
 		// SET 3, E
 		// Set bit 3 of E
-		compileInstrSET(StaticParam(3), Register(E))
+		compileInstrSET(StaticParam(3), E)
 	case 0xDC:
 		// SET 3, H
 		// Set bit 3 of H
-		compileInstrSET(StaticParam(3), Register(H))
+		compileInstrSET(StaticParam(3), H)
 	case 0xDD:
 		// SET 3, L
 		// Set bit 3 of L
-		compileInstrSET(StaticParam(3), Register(L))
+		compileInstrSET(StaticParam(3), L)
 	case 0xDE:
 		// SET 3, (HL)
 		// Set bit 3 of value pointed by HL
@@ -1573,31 +1771,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xDF:
 		// SET 3, A
 		// Set bit 3 of A
-		compileInstrSET(StaticParam(3), Register(A))
+		compileInstrSET(StaticParam(3), A)
 	case 0xE0:
 		// SET 4, B
 		// Set bit 4 of B
-		compileInstrSET(StaticParam(4), Register(B))
+		compileInstrSET(StaticParam(4), B)
 	case 0xE1:
 		// SET 4, C
 		// Set bit 4 of C
-		compileInstrSET(StaticParam(4), Register(C))
+		compileInstrSET(StaticParam(4), C)
 	case 0xE2:
 		// SET 4, D
 		// Set bit 4 of D
-		compileInstrSET(StaticParam(4), Register(D))
+		compileInstrSET(StaticParam(4), D)
 	case 0xE3:
 		// SET 4, E
 		// Set bit 4 of E
-		compileInstrSET(StaticParam(4), Register(E))
+		compileInstrSET(StaticParam(4), E)
 	case 0xE4:
 		// SET 4, H
 		// Set bit 4 of H
-		compileInstrSET(StaticParam(4), Register(H))
+		compileInstrSET(StaticParam(4), H)
 	case 0xE5:
 		// SET 4, L
 		// Set bit 4 of L
-		compileInstrSET(StaticParam(4), Register(L))
+		compileInstrSET(StaticParam(4), L)
 	case 0xE6:
 		// SET 4, (HL)
 		// Set bit 4 of value pointed by HL
@@ -1605,31 +1803,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xE7:
 		// SET 4, A
 		// Set bit 4 of A
-		compileInstrSET(StaticParam(4), Register(A))
+		compileInstrSET(StaticParam(4), A)
 	case 0xE8:
 		// SET 5, B
 		// Set bit 5 of B
-		compileInstrSET(StaticParam(5), Register(B))
+		compileInstrSET(StaticParam(5), B)
 	case 0xE9:
 		// SET 5, C
 		// Set bit 5 of C
-		compileInstrSET(StaticParam(5), Register(C))
+		compileInstrSET(StaticParam(5), C)
 	case 0xEA:
 		// SET 5, D
 		// Set bit 5 of D
-		compileInstrSET(StaticParam(5), Register(D))
+		compileInstrSET(StaticParam(5), D)
 	case 0xEB:
 		// SET 5, E
 		// Set bit 5 of E
-		compileInstrSET(StaticParam(5), Register(E))
+		compileInstrSET(StaticParam(5), E)
 	case 0xEC:
 		// SET 5, H
 		// Set bit 5 of H
-		compileInstrSET(StaticParam(5), Register(H))
+		compileInstrSET(StaticParam(5), H)
 	case 0xED:
 		// SET 5, L
 		// Set bit 5 of L
-		compileInstrSET(StaticParam(5), Register(L))
+		compileInstrSET(StaticParam(5), L)
 	case 0xEE:
 		// SET 5, (HL)
 		// Set bit 5 of value pointed by HL
@@ -1637,31 +1835,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xEF:
 		// SET 5, A
 		// Set bit 5 of A
-		compileInstrSET(StaticParam(5), Register(A))
+		compileInstrSET(StaticParam(5), A)
 	case 0xF0:
 		// SET 6, B
 		// Set bit 6 of B
-		compileInstrSET(StaticParam(6), Register(B))
+		compileInstrSET(StaticParam(6), B)
 	case 0xF1:
 		// SET 6, C
 		// Set bit 6 of C
-		compileInstrSET(StaticParam(6), Register(C))
+		compileInstrSET(StaticParam(6), C)
 	case 0xF2:
 		// SET 6, D
 		// Set bit 6 of D
-		compileInstrSET(StaticParam(6), Register(D))
+		compileInstrSET(StaticParam(6), D)
 	case 0xF3:
 		// SET 6, E
 		// Set bit 6 of E
-		compileInstrSET(StaticParam(6), Register(E))
+		compileInstrSET(StaticParam(6), E)
 	case 0xF4:
 		// SET 6, H
 		// Set bit 6 of H
-		compileInstrSET(StaticParam(6), Register(H))
+		compileInstrSET(StaticParam(6), H)
 	case 0xF5:
 		// SET 6, L
 		// Set bit 6 of L
-		compileInstrSET(StaticParam(6), Register(L))
+		compileInstrSET(StaticParam(6), L)
 	case 0xF6:
 		// SET 6, (HL)
 		// Set bit 6 of value pointed by HL
@@ -1669,31 +1867,31 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xF7:
 		// SET 6, A
 		// Set bit 6 of A
-		compileInstrSET(StaticParam(6), Register(A))
+		compileInstrSET(StaticParam(6), A)
 	case 0xF8:
 		// SET 7, B
 		// Set bit 7 of B
-		compileInstrSET(StaticParam(7), Register(B))
+		compileInstrSET(StaticParam(7), B)
 	case 0xF9:
 		// SET 7, C
 		// Set bit 7 of C
-		compileInstrSET(StaticParam(7), Register(C))
+		compileInstrSET(StaticParam(7), C)
 	case 0xFA:
 		// SET 7, D
 		// Set bit 7 of D
-		compileInstrSET(StaticParam(7), Register(D))
+		compileInstrSET(StaticParam(7), D)
 	case 0xFB:
 		// SET 7, E
 		// Set bit 7 of E
-		compileInstrSET(StaticParam(7), Register(E))
+		compileInstrSET(StaticParam(7), E)
 	case 0xFC:
 		// SET 7, H
 		// Set bit 7 of H
-		compileInstrSET(StaticParam(7), Register(H))
+		compileInstrSET(StaticParam(7), H)
 	case 0xFD:
 		// SET 7, L
 		// Set bit 7 of L
-		compileInstrSET(StaticParam(7), Register(L))
+		compileInstrSET(StaticParam(7), L)
 	case 0xFE:
 		// SET 7, (HL)
 		// Set bit 7 of value pointed by HL
@@ -1701,7 +1899,7 @@ func (a Arch) compileExtCB(c *compiler.Compiler) error {
 	case 0xFF:
 		// SET 7, A
 		// Set bit 7 of A
-		compileInstrSET(StaticParam(7), Register(A))
+		compileInstrSET(StaticParam(7), A)
 	}
 }
 
@@ -1729,7 +1927,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x02:
 		// LD (BC), A
 		// Save A to address pointed by BC
-		compileInstrLD(IndirectRegister((BC)), Register(A))
+		compileInstrLD(IndirectRegister((BC)), A)
 	case 0x03:
 		// INC BC
 		// Increment 16-bit BC
@@ -1737,11 +1935,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x04:
 		// INC B
 		// Increment B
-		compileInstrINC(Register(B))
+		compileInstrINC(B)
 	case 0x05:
 		// DEC B
 		// Decrement B
-		compileInstrDEC(Register(B))
+		compileInstrDEC(B)
 	case 0x06:
 		// LD B, n
 		// Load 8-bit immediate into B
@@ -1750,11 +1948,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(Register(B), operands[0])
+		compileInstrLD(B, operands[0])
 	case 0x07:
 		// RLC A
 		// Rotate A left with carry
-		compileInstrRLC(Register(A))
+		compileInstrRLC(A)
 	case 0x08:
 		// LD (nn), SP
 		// Save SP to given address
@@ -1763,7 +1961,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(uint16(operands[1])<<8|uint16(operands[0]), Register(SP))
+		compileInstrLD(uint16(operands[1])<<8|uint16(operands[0]), SP)
 	case 0x09:
 		// ADD HL, BC
 		// Add 16-bit BC to HL
@@ -1771,7 +1969,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x0A:
 		// LD A, (BC)
 		// Load A from address pointed to by BC
-		compileInstrLD(Register(A), IndirectRegister((BC)))
+		compileInstrLD(A, IndirectRegister((BC)))
 	case 0x0B:
 		// DEC BC
 		// Decrement 16-bit BC
@@ -1779,11 +1977,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x0C:
 		// INC C
 		// Increment C
-		compileInstrINC(Register(C))
+		compileInstrINC(C)
 	case 0x0D:
 		// DEC C
 		// Decrement C
-		compileInstrDEC(Register(C))
+		compileInstrDEC(C)
 	case 0x0E:
 		// LD C, n
 		// Load 8-bit immediate into C
@@ -1792,11 +1990,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(Register(C), operands[0])
+		compileInstrLD(C, operands[0])
 	case 0x0F:
 		// RRC A
 		// Rotate A right with carry
-		compileInstrRRC(Register(A))
+		compileInstrRRC(A)
 	case 0x10:
 		// STOP
 		// Stop processor
@@ -1813,7 +2011,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x12:
 		// LD (DE), A
 		// Save A to address pointed by DE
-		compileInstrLD(IndirectRegister((DE)), Register(A))
+		compileInstrLD(IndirectRegister((DE)), A)
 	case 0x13:
 		// INC DE
 		// Increment 16-bit DE
@@ -1821,11 +2019,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x14:
 		// INC D
 		// Increment D
-		compileInstrINC(Register(D))
+		compileInstrINC(D)
 	case 0x15:
 		// DEC D
 		// Decrement D
-		compileInstrDEC(Register(D))
+		compileInstrDEC(D)
 	case 0x16:
 		// LD D, n
 		// Load 8-bit immediate into D
@@ -1834,11 +2032,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(Register(D), operands[0])
+		compileInstrLD(D, operands[0])
 	case 0x17:
 		// RL A
 		// Rotate A left
-		compileInstrRL(Register(A))
+		compileInstrRL(A)
 	case 0x18:
 		// JR n
 		// Relative jump by signed immediate
@@ -1855,7 +2053,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x1A:
 		// LD A, (DE)
 		// Load A from address pointed to by DE
-		compileInstrLD(Register(A), IndirectRegister((DE)))
+		compileInstrLD(A, IndirectRegister((DE)))
 	case 0x1B:
 		// DEC DE
 		// Decrement 16-bit DE
@@ -1863,11 +2061,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x1C:
 		// INC E
 		// Increment E
-		compileInstrINC(Register(E))
+		compileInstrINC(E)
 	case 0x1D:
 		// DEC E
 		// Decrement E
-		compileInstrDEC(Register(E))
+		compileInstrDEC(E)
 	case 0x1E:
 		// LD E, n
 		// Load 8-bit immediate into E
@@ -1876,11 +2074,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(Register(E), operands[0])
+		compileInstrLD(E, operands[0])
 	case 0x1F:
 		// RR A
 		// Rotate A right
-		compileInstrRR(Register(A))
+		compileInstrRR(A)
 	case 0x20:
 		// JR NZ, n
 		// Relative jump by signed immediate if last result was not zero
@@ -1902,7 +2100,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x22:
 		// LDI (HL), A
 		// Save A to address pointed by HL, and increment HL
-		compileInstrLDI(IndirectRegister((HL)), Register(A))
+		compileInstrLDI(IndirectRegister((HL)), A)
 	case 0x23:
 		// INC HL
 		// Increment 16-bit HL
@@ -1910,11 +2108,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x24:
 		// INC H
 		// Increment H
-		compileInstrINC(Register(H))
+		compileInstrINC(H)
 	case 0x25:
 		// DEC H
 		// Decrement H
-		compileInstrDEC(Register(H))
+		compileInstrDEC(H)
 	case 0x26:
 		// LD H, n
 		// Load 8-bit immediate into H
@@ -1923,7 +2121,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(Register(H), operands[0])
+		compileInstrLD(H, operands[0])
 	case 0x27:
 		// DAA
 		// Adjust A for BCD addition
@@ -1944,7 +2142,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x2A:
 		// LDI A, (HL)
 		// Load A from address pointed to by HL, and increment HL
-		compileInstrLDI(Register(A), IndirectRegister((HL)))
+		compileInstrLDI(A, IndirectRegister((HL)))
 	case 0x2B:
 		// DEC HL
 		// Decrement 16-bit HL
@@ -1952,11 +2150,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x2C:
 		// INC L
 		// Increment L
-		compileInstrINC(Register(L))
+		compileInstrINC(L)
 	case 0x2D:
 		// DEC L
 		// Decrement L
-		compileInstrDEC(Register(L))
+		compileInstrDEC(L)
 	case 0x2E:
 		// LD L, n
 		// Load 8-bit immediate into L
@@ -1965,7 +2163,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(Register(L), operands[0])
+		compileInstrLD(L, operands[0])
 	case 0x2F:
 		// CPL
 		// Complement (logical NOT) on A
@@ -1987,15 +2185,15 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(Register(SP), uint16(operands[1])<<8|uint16(operands[0]))
+		compileInstrLD(SP, uint16(operands[1])<<8|uint16(operands[0]))
 	case 0x32:
 		// LDD (HL), A
 		// Save A to address pointed by HL, and decrement HL
-		compileInstrLDD(IndirectRegister((HL)), Register(A))
+		compileInstrLDD(IndirectRegister((HL)), A)
 	case 0x33:
 		// INC SP
 		// Increment 16-bit HL
-		compileInstrINC(Register(SP))
+		compileInstrINC(SP)
 	case 0x34:
 		// INC (HL)
 		// Increment value pointed by HL
@@ -2025,27 +2223,27 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJR(Register(C), operands[0])
+		compileInstrJR(C, operands[0])
 	case 0x39:
 		// ADD HL, SP
 		// Add 16-bit SP to HL
-		compileInstrADD(CompositeRegister{H, L}, Register(SP))
+		compileInstrADD(CompositeRegister{H, L}, SP)
 	case 0x3A:
 		// LDD A, (HL)
 		// Load A from address pointed to by HL, and decrement HL
-		compileInstrLDD(Register(A), IndirectRegister((HL)))
+		compileInstrLDD(A, IndirectRegister((HL)))
 	case 0x3B:
 		// DEC SP
 		// Decrement 16-bit SP
-		compileInstrDEC(Register(SP))
+		compileInstrDEC(SP)
 	case 0x3C:
 		// INC A
 		// Increment A
-		compileInstrINC(Register(A))
+		compileInstrINC(A)
 	case 0x3D:
 		// DEC A
 		// Decrement A
-		compileInstrDEC(Register(A))
+		compileInstrDEC(A)
 	case 0x3E:
 		// LD A, n
 		// Load 8-bit immediate into A
@@ -2054,7 +2252,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(Register(A), operands[0])
+		compileInstrLD(A, operands[0])
 	case 0x3F:
 		// CCF
 		// Clear carry flag
@@ -2062,219 +2260,219 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x40:
 		// LD B, B
 		// Copy B to B
-		compileInstrLD(Register(B), Register(B))
+		compileInstrLD(B, B)
 	case 0x41:
 		// LD B, C
 		// Copy C to B
-		compileInstrLD(Register(B), Register(C))
+		compileInstrLD(B, C)
 	case 0x42:
 		// LD B, D
 		// Copy D to B
-		compileInstrLD(Register(B), Register(D))
+		compileInstrLD(B, D)
 	case 0x43:
 		// LD B, E
 		// Copy E to B
-		compileInstrLD(Register(B), Register(E))
+		compileInstrLD(B, E)
 	case 0x44:
 		// LD B, H
 		// Copy H to B
-		compileInstrLD(Register(B), Register(H))
+		compileInstrLD(B, H)
 	case 0x45:
 		// LD B, L
 		// Copy L to B
-		compileInstrLD(Register(B), Register(L))
+		compileInstrLD(B, L)
 	case 0x46:
 		// LD B, (HL)
 		// Copy value pointed by HL to B
-		compileInstrLD(Register(B), IndirectRegister((HL)))
+		compileInstrLD(B, IndirectRegister((HL)))
 	case 0x47:
 		// LD B, A
 		// Copy A to B
-		compileInstrLD(Register(B), Register(A))
+		compileInstrLD(B, A)
 	case 0x48:
 		// LD C, B
 		// Copy B to C
-		compileInstrLD(Register(C), Register(B))
+		compileInstrLD(C, B)
 	case 0x49:
 		// LD C, C
 		// Copy C to C
-		compileInstrLD(Register(C), Register(C))
+		compileInstrLD(C, C)
 	case 0x4A:
 		// LD C, D
 		// Copy D to C
-		compileInstrLD(Register(C), Register(D))
+		compileInstrLD(C, D)
 	case 0x4B:
 		// LD C, E
 		// Copy E to C
-		compileInstrLD(Register(C), Register(E))
+		compileInstrLD(C, E)
 	case 0x4C:
 		// LD C, H
 		// Copy H to C
-		compileInstrLD(Register(C), Register(H))
+		compileInstrLD(C, H)
 	case 0x4D:
 		// LD C, L
 		// Copy L to C
-		compileInstrLD(Register(C), Register(L))
+		compileInstrLD(C, L)
 	case 0x4E:
 		// LD C, (HL)
 		// Copy value pointed by HL to C
-		compileInstrLD(Register(C), IndirectRegister((HL)))
+		compileInstrLD(C, IndirectRegister((HL)))
 	case 0x4F:
 		// LD C, A
 		// Copy A to C
-		compileInstrLD(Register(C), Register(A))
+		compileInstrLD(C, A)
 	case 0x50:
 		// LD D, B
 		// Copy B to D
-		compileInstrLD(Register(D), Register(B))
+		compileInstrLD(D, B)
 	case 0x51:
 		// LD D, C
 		// Copy C to D
-		compileInstrLD(Register(D), Register(C))
+		compileInstrLD(D, C)
 	case 0x52:
 		// LD D, D
 		// Copy D to D
-		compileInstrLD(Register(D), Register(D))
+		compileInstrLD(D, D)
 	case 0x53:
 		// LD D, E
 		// Copy E to D
-		compileInstrLD(Register(D), Register(E))
+		compileInstrLD(D, E)
 	case 0x54:
 		// LD D, H
 		// Copy H to D
-		compileInstrLD(Register(D), Register(H))
+		compileInstrLD(D, H)
 	case 0x55:
 		// LD D, L
 		// Copy L to D
-		compileInstrLD(Register(D), Register(L))
+		compileInstrLD(D, L)
 	case 0x56:
 		// LD D, (HL)
 		// Copy value pointed by HL to D
-		compileInstrLD(Register(D), IndirectRegister((HL)))
+		compileInstrLD(D, IndirectRegister((HL)))
 	case 0x57:
 		// LD D, A
 		// Copy A to D
-		compileInstrLD(Register(D), Register(A))
+		compileInstrLD(D, A)
 	case 0x58:
 		// LD E, B
 		// Copy B to E
-		compileInstrLD(Register(E), Register(B))
+		compileInstrLD(E, B)
 	case 0x59:
 		// LD E, C
 		// Copy C to E
-		compileInstrLD(Register(E), Register(C))
+		compileInstrLD(E, C)
 	case 0x5A:
 		// LD E, D
 		// Copy D to E
-		compileInstrLD(Register(E), Register(D))
+		compileInstrLD(E, D)
 	case 0x5B:
 		// LD E, E
 		// Copy E to E
-		compileInstrLD(Register(E), Register(E))
+		compileInstrLD(E, E)
 	case 0x5C:
 		// LD E, H
 		// Copy H to E
-		compileInstrLD(Register(E), Register(H))
+		compileInstrLD(E, H)
 	case 0x5D:
 		// LD E, L
 		// Copy L to E
-		compileInstrLD(Register(E), Register(L))
+		compileInstrLD(E, L)
 	case 0x5E:
 		// LD E, (HL)
 		// Copy value pointed by HL to E
-		compileInstrLD(Register(E), IndirectRegister((HL)))
+		compileInstrLD(E, IndirectRegister((HL)))
 	case 0x5F:
 		// LD E, A
 		// Copy A to E
-		compileInstrLD(Register(E), Register(A))
+		compileInstrLD(E, A)
 	case 0x60:
 		// LD H, B
 		// Copy B to H
-		compileInstrLD(Register(H), Register(B))
+		compileInstrLD(H, B)
 	case 0x61:
 		// LD H, C
 		// Copy C to H
-		compileInstrLD(Register(H), Register(C))
+		compileInstrLD(H, C)
 	case 0x62:
 		// LD H, D
 		// Copy D to H
-		compileInstrLD(Register(H), Register(D))
+		compileInstrLD(H, D)
 	case 0x63:
 		// LD H, E
 		// Copy E to H
-		compileInstrLD(Register(H), Register(E))
+		compileInstrLD(H, E)
 	case 0x64:
 		// LD H, H
 		// Copy H to H
-		compileInstrLD(Register(H), Register(H))
+		compileInstrLD(H, H)
 	case 0x65:
 		// LD H, L
 		// Copy L to H
-		compileInstrLD(Register(H), Register(L))
+		compileInstrLD(H, L)
 	case 0x66:
 		// LD H, (HL)
 		// Copy value pointed by HL to H
-		compileInstrLD(Register(H), IndirectRegister((HL)))
+		compileInstrLD(H, IndirectRegister((HL)))
 	case 0x67:
 		// LD H, A
 		// Copy A to H
-		compileInstrLD(Register(H), Register(A))
+		compileInstrLD(H, A)
 	case 0x68:
 		// LD L, B
 		// Copy B to L
-		compileInstrLD(Register(L), Register(B))
+		compileInstrLD(L, B)
 	case 0x69:
 		// LD L, C
 		// Copy C to L
-		compileInstrLD(Register(L), Register(C))
+		compileInstrLD(L, C)
 	case 0x6A:
 		// LD L, D
 		// Copy D to L
-		compileInstrLD(Register(L), Register(D))
+		compileInstrLD(L, D)
 	case 0x6B:
 		// LD L, E
 		// Copy E to L
-		compileInstrLD(Register(L), Register(E))
+		compileInstrLD(L, E)
 	case 0x6C:
 		// LD L, H
 		// Copy H to L
-		compileInstrLD(Register(L), Register(H))
+		compileInstrLD(L, H)
 	case 0x6D:
 		// LD L, L
 		// Copy L to L
-		compileInstrLD(Register(L), Register(L))
+		compileInstrLD(L, L)
 	case 0x6E:
 		// LD L, (HL)
 		// Copy value pointed by HL to L
-		compileInstrLD(Register(L), IndirectRegister((HL)))
+		compileInstrLD(L, IndirectRegister((HL)))
 	case 0x6F:
 		// LD L, A
 		// Copy A to L
-		compileInstrLD(Register(L), Register(A))
+		compileInstrLD(L, A)
 	case 0x70:
 		// LD (HL), B
 		// Copy B to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), Register(B))
+		compileInstrLD(IndirectRegister((HL)), B)
 	case 0x71:
 		// LD (HL), C
 		// Copy C to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), Register(C))
+		compileInstrLD(IndirectRegister((HL)), C)
 	case 0x72:
 		// LD (HL), D
 		// Copy D to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), Register(D))
+		compileInstrLD(IndirectRegister((HL)), D)
 	case 0x73:
 		// LD (HL), E
 		// Copy E to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), Register(E))
+		compileInstrLD(IndirectRegister((HL)), E)
 	case 0x74:
 		// LD (HL), H
 		// Copy H to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), Register(H))
+		compileInstrLD(IndirectRegister((HL)), H)
 	case 0x75:
 		// LD (HL), L
 		// Copy L to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), Register(L))
+		compileInstrLD(IndirectRegister((HL)), L)
 	case 0x76:
 		// HALT
 		// Halt processor
@@ -2282,191 +2480,191 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0x77:
 		// LD (HL), A
 		// Copy A to address pointed by HL
-		compileInstrLD(IndirectRegister((HL)), Register(A))
+		compileInstrLD(IndirectRegister((HL)), A)
 	case 0x78:
 		// LD A, B
 		// Copy B to A
-		compileInstrLD(Register(A), Register(B))
+		compileInstrLD(A, B)
 	case 0x79:
 		// LD A, C
 		// Copy C to A
-		compileInstrLD(Register(A), Register(C))
+		compileInstrLD(A, C)
 	case 0x7A:
 		// LD A, D
 		// Copy D to A
-		compileInstrLD(Register(A), Register(D))
+		compileInstrLD(A, D)
 	case 0x7B:
 		// LD A, E
 		// Copy E to A
-		compileInstrLD(Register(A), Register(E))
+		compileInstrLD(A, E)
 	case 0x7C:
 		// LD A, H
 		// Copy H to A
-		compileInstrLD(Register(A), Register(H))
+		compileInstrLD(A, H)
 	case 0x7D:
 		// LD A, L
 		// Copy L to A
-		compileInstrLD(Register(A), Register(L))
+		compileInstrLD(A, L)
 	case 0x7E:
 		// LD A, (HL)
 		// Copy value pointed by HL to A
-		compileInstrLD(Register(A), IndirectRegister((HL)))
+		compileInstrLD(A, IndirectRegister((HL)))
 	case 0x7F:
 		// LD A, A
 		// Copy A to A
-		compileInstrLD(Register(A), Register(A))
+		compileInstrLD(A, A)
 	case 0x80:
 		// ADD A, B
 		// Add B to A
-		compileInstrADD(Register(A), Register(B))
+		compileInstrADD(A, B)
 	case 0x81:
 		// ADD A, C
 		// Add C to A
-		compileInstrADD(Register(A), Register(C))
+		compileInstrADD(A, C)
 	case 0x82:
 		// ADD A, D
 		// Add D to A
-		compileInstrADD(Register(A), Register(D))
+		compileInstrADD(A, D)
 	case 0x83:
 		// ADD A, E
 		// Add E to A
-		compileInstrADD(Register(A), Register(E))
+		compileInstrADD(A, E)
 	case 0x84:
 		// ADD A, H
 		// Add H to A
-		compileInstrADD(Register(A), Register(H))
+		compileInstrADD(A, H)
 	case 0x85:
 		// ADD A, L
 		// Add L to A
-		compileInstrADD(Register(A), Register(L))
+		compileInstrADD(A, L)
 	case 0x86:
 		// ADD A, (HL)
 		// Add value pointed by HL to A
-		compileInstrADD(Register(A), IndirectRegister((HL)))
+		compileInstrADD(A, IndirectRegister((HL)))
 	case 0x87:
 		// ADD A, A
 		// Add A to A
-		compileInstrADD(Register(A), Register(A))
+		compileInstrADD(A, A)
 	case 0x88:
 		// ADC A, B
 		// Add B and carry flag to A
-		compileInstrADC(Register(A), Register(B))
+		compileInstrADC(A, B)
 	case 0x89:
 		// ADC A, C
 		// Add C and carry flag to A
-		compileInstrADC(Register(A), Register(C))
+		compileInstrADC(A, C)
 	case 0x8A:
 		// ADC A, D
 		// Add D and carry flag to A
-		compileInstrADC(Register(A), Register(D))
+		compileInstrADC(A, D)
 	case 0x8B:
 		// ADC A, E
 		// Add E and carry flag to A
-		compileInstrADC(Register(A), Register(E))
+		compileInstrADC(A, E)
 	case 0x8C:
 		// ADC A, H
 		// Add H and carry flag to A
-		compileInstrADC(Register(A), Register(H))
+		compileInstrADC(A, H)
 	case 0x8D:
 		// ADC A, L
 		// Add and carry flag L to A
-		compileInstrADC(Register(A), Register(L))
+		compileInstrADC(A, L)
 	case 0x8E:
 		// ADC A, (HL)
 		// Add value pointed by HL and carry flag to A
-		compileInstrADC(Register(A), IndirectRegister((HL)))
+		compileInstrADC(A, IndirectRegister((HL)))
 	case 0x8F:
 		// ADC A, A
 		// Add A and carry flag to A
-		compileInstrADC(Register(A), Register(A))
+		compileInstrADC(A, A)
 	case 0x90:
 		// SUB A, B
 		// Subtract B from A
-		compileInstrSUB(Register(A), Register(B))
+		compileInstrSUB(A, B)
 	case 0x91:
 		// SUB A, C
 		// Subtract C from A
-		compileInstrSUB(Register(A), Register(C))
+		compileInstrSUB(A, C)
 	case 0x92:
 		// SUB A, D
 		// Subtract D from A
-		compileInstrSUB(Register(A), Register(D))
+		compileInstrSUB(A, D)
 	case 0x93:
 		// SUB A, E
 		// Subtract E from A
-		compileInstrSUB(Register(A), Register(E))
+		compileInstrSUB(A, E)
 	case 0x94:
 		// SUB A, H
 		// Subtract H from A
-		compileInstrSUB(Register(A), Register(H))
+		compileInstrSUB(A, H)
 	case 0x95:
 		// SUB A, L
 		// Subtract L from A
-		compileInstrSUB(Register(A), Register(L))
+		compileInstrSUB(A, L)
 	case 0x96:
 		// SUB A, (HL)
 		// Subtract value pointed by HL from A
-		compileInstrSUB(Register(A), IndirectRegister((HL)))
+		compileInstrSUB(A, IndirectRegister((HL)))
 	case 0x97:
 		// SUB A, A
 		// Subtract A from A
-		compileInstrSUB(Register(A), Register(A))
+		compileInstrSUB(A, A)
 	case 0x98:
 		// SBC A, B
 		// Subtract B and carry flag from A
-		compileInstrSBC(Register(A), Register(B))
+		compileInstrSBC(A, B)
 	case 0x99:
 		// SBC A, C
 		// Subtract C and carry flag from A
-		compileInstrSBC(Register(A), Register(C))
+		compileInstrSBC(A, C)
 	case 0x9A:
 		// SBC A, D
 		// Subtract D and carry flag from A
-		compileInstrSBC(Register(A), Register(D))
+		compileInstrSBC(A, D)
 	case 0x9B:
 		// SBC A, E
 		// Subtract E and carry flag from A
-		compileInstrSBC(Register(A), Register(E))
+		compileInstrSBC(A, E)
 	case 0x9C:
 		// SBC A, H
 		// Subtract H and carry flag from A
-		compileInstrSBC(Register(A), Register(H))
+		compileInstrSBC(A, H)
 	case 0x9D:
 		// SBC A, L
 		// Subtract and carry flag L from A
-		compileInstrSBC(Register(A), Register(L))
+		compileInstrSBC(A, L)
 	case 0x9E:
 		// SBC A, (HL)
 		// Subtract value pointed by HL and carry flag from A
-		compileInstrSBC(Register(A), IndirectRegister((HL)))
+		compileInstrSBC(A, IndirectRegister((HL)))
 	case 0x9F:
 		// SBC A, A
 		// Subtract A and carry flag from A
-		compileInstrSBC(Register(A), Register(A))
+		compileInstrSBC(A, A)
 	case 0xA0:
 		// AND B
 		// Logical AND B against A
-		compileInstrAND(Register(B))
+		compileInstrAND(B)
 	case 0xA1:
 		// AND C
 		// Logical AND C against A
-		compileInstrAND(Register(C))
+		compileInstrAND(C)
 	case 0xA2:
 		// AND D
 		// Logical AND D against A
-		compileInstrAND(Register(D))
+		compileInstrAND(D)
 	case 0xA3:
 		// AND E
 		// Logical AND E against A
-		compileInstrAND(Register(E))
+		compileInstrAND(E)
 	case 0xA4:
 		// AND H
 		// Logical AND H against A
-		compileInstrAND(Register(H))
+		compileInstrAND(H)
 	case 0xA5:
 		// AND L
 		// Logical AND L against A
-		compileInstrAND(Register(L))
+		compileInstrAND(L)
 	case 0xA6:
 		// AND (HL)
 		// Logical AND value pointed by HL against A
@@ -2474,31 +2672,31 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0xA7:
 		// AND A
 		// Logical AND A against A
-		compileInstrAND(Register(A))
+		compileInstrAND(A)
 	case 0xA8:
 		// XOR B
 		// Logical XOR B against A
-		compileInstrXOR(Register(B))
+		compileInstrXOR(B)
 	case 0xA9:
 		// XOR C
 		// Logical XOR C against A
-		compileInstrXOR(Register(C))
+		compileInstrXOR(C)
 	case 0xAA:
 		// XOR D
 		// Logical XOR D against A
-		compileInstrXOR(Register(D))
+		compileInstrXOR(D)
 	case 0xAB:
 		// XOR E
 		// Logical XOR E against A
-		compileInstrXOR(Register(E))
+		compileInstrXOR(E)
 	case 0xAC:
 		// XOR H
 		// Logical XOR H against A
-		compileInstrXOR(Register(H))
+		compileInstrXOR(H)
 	case 0xAD:
 		// XOR L
 		// Logical XOR L against A
-		compileInstrXOR(Register(L))
+		compileInstrXOR(L)
 	case 0xAE:
 		// XOR (HL)
 		// Logical XOR value pointed by HL against A
@@ -2506,31 +2704,31 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0xAF:
 		// XOR A
 		// Logical XOR A against A
-		compileInstrXOR(Register(A))
+		compileInstrXOR(A)
 	case 0xB0:
 		// OR B
 		// Logical OR B against A
-		compileInstrOR(Register(B))
+		compileInstrOR(B)
 	case 0xB1:
 		// OR C
 		// Logical OR C against A
-		compileInstrOR(Register(C))
+		compileInstrOR(C)
 	case 0xB2:
 		// OR D
 		// Logical OR D against A
-		compileInstrOR(Register(D))
+		compileInstrOR(D)
 	case 0xB3:
 		// OR E
 		// Logical OR E against A
-		compileInstrOR(Register(E))
+		compileInstrOR(E)
 	case 0xB4:
 		// OR H
 		// Logical OR H against A
-		compileInstrOR(Register(H))
+		compileInstrOR(H)
 	case 0xB5:
 		// OR L
 		// Logical OR L against A
-		compileInstrOR(Register(L))
+		compileInstrOR(L)
 	case 0xB6:
 		// OR (HL)
 		// Logical OR value pointed by HL against A
@@ -2538,31 +2736,31 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0xB7:
 		// OR A
 		// Logical OR A against A
-		compileInstrOR(Register(A))
+		compileInstrOR(A)
 	case 0xB8:
 		// CP B
 		// Compare B against A
-		compileInstrCP(Register(B))
+		compileInstrCP(B)
 	case 0xB9:
 		// CP C
 		// Compare C against A
-		compileInstrCP(Register(C))
+		compileInstrCP(C)
 	case 0xBA:
 		// CP D
 		// Compare D against A
-		compileInstrCP(Register(D))
+		compileInstrCP(D)
 	case 0xBB:
 		// CP E
 		// Compare E against A
-		compileInstrCP(Register(E))
+		compileInstrCP(E)
 	case 0xBC:
 		// CP H
 		// Compare H against A
-		compileInstrCP(Register(H))
+		compileInstrCP(H)
 	case 0xBD:
 		// CP L
 		// Compare L against A
-		compileInstrCP(Register(L))
+		compileInstrCP(L)
 	case 0xBE:
 		// CP (HL)
 		// Compare value pointed by HL against A
@@ -2570,7 +2768,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0xBF:
 		// CP A
 		// Compare A against A
-		compileInstrCP(Register(A))
+		compileInstrCP(A)
 	case 0xC0:
 		// RET NZ
 		// Return if last result was not zero
@@ -2618,7 +2816,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrADD(Register(A), operands[0])
+		compileInstrADD(A, operands[0])
 	case 0xC7:
 		// RST 0
 		// Call routine at address 0000h
@@ -2668,7 +2866,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrADC(Register(A), operands[0])
+		compileInstrADC(A, operands[0])
 	case 0xCF:
 		// RST 8
 		// Call routine at address 0008h
@@ -2715,7 +2913,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrSUB(Register(A), operands[0])
+		compileInstrSUB(A, operands[0])
 	case 0xD7:
 		// RST 10
 		// Call routine at address 0010h
@@ -2723,7 +2921,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0xD8:
 		// RET C
 		// Return if last result caused carry
-		compileInstrRET(Register(C))
+		compileInstrRET(C)
 	case 0xD9:
 		// RETI
 		// Enable interrupts and return to calling routine
@@ -2736,7 +2934,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrJP(Register(C), uint16(operands[1])<<8|uint16(operands[0]))
+		compileInstrJP(C, uint16(operands[1])<<8|uint16(operands[0]))
 	case 0xDB:
 		// XX
 		// Operation removed in this CPU
@@ -2749,7 +2947,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrCALL(Register(C), uint16(operands[1])<<8|uint16(operands[0]))
+		compileInstrCALL(C, uint16(operands[1])<<8|uint16(operands[0]))
 	case 0xDD:
 		// XX
 		// Operation removed in this CPU
@@ -2762,7 +2960,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrSBC(Register(A), operands[0])
+		compileInstrSBC(A, operands[0])
 	case 0xDF:
 		// RST 18
 		// Call routine at address 0018h
@@ -2775,7 +2973,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLDH(operands[0], Register(A))
+		compileInstrLDH(operands[0], A)
 	case 0xE1:
 		// POP HL
 		// Pop 16-bit value from stack into HL
@@ -2783,7 +2981,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 	case 0xE2:
 		// LDH (C), A
 		// Save A at address pointed to by (FF00h + C)
-		compileInstrLDH(IndirectRegister((C)), Register(A))
+		compileInstrLDH(IndirectRegister((C)), A)
 	case 0xE3:
 		// XX
 		// Operation removed in this CPU
@@ -2817,7 +3015,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrADD(Register(SP), operands[0])
+		compileInstrADD(SP, operands[0])
 	case 0xE9:
 		// JP (HL)
 		// Jump to 16-bit value pointed by HL
@@ -2830,7 +3028,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(uint16(operands[1])<<8|uint16(operands[0]), Register(A))
+		compileInstrLD(uint16(operands[1])<<8|uint16(operands[0]), A)
 	case 0xEB:
 		// XX
 		// Operation removed in this CPU
@@ -2864,7 +3062,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLDH(Register(A), operands[0])
+		compileInstrLDH(A, operands[0])
 	case 0xF1:
 		// POP AF
 		// Pop 16-bit value from stack into AF
@@ -2906,11 +3104,11 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLDHL(Register(SP), operands[0])
+		compileInstrLDHL(SP, operands[0])
 	case 0xF9:
 		// LD SP, HL
 		// Copy HL to SP
-		compileInstrLD(Register(SP), CompositeRegister{H, L})
+		compileInstrLD(SP, CompositeRegister{H, L})
 	case 0xFA:
 		// LD A, (nn)
 		// Load A from given 16-bit address
@@ -2919,7 +3117,7 @@ func (a Arch) compileExtDirect(c *compiler.Compiler) error {
 		if err != nil {
 			return err
 		}
-		compileInstrLD(Register(A), uint16(operands[1])<<8|uint16(operands[0]))
+		compileInstrLD(A, Immediate16(uint16(operands[1])<<8|uint16(operands[0])))
 	case 0xFB:
 		// EI
 		// Enable interrupts
