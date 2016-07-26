@@ -1,3 +1,7 @@
+"""Generate the skeleton of a Gameboy disassembler, in Go, starting
+from JSON opcode data, provided from STDIN.
+"""
+
 import json
 import sys
 import re
@@ -279,7 +283,7 @@ const (
 	D
 	E
 	F
-	G
+
 	H
 	L
 )
