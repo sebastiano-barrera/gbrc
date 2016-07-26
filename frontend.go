@@ -4,8 +4,8 @@ import (
 	"os"
 	"flag"
 	"fmt"
-	"gbrc/compiler"
-	"gbrc/gb"
+	"gbrc/parser"
+	"gbrc/backend"
 )
 
 var (
@@ -26,12 +26,10 @@ func main() {
 		return
 	}
 
-	comp := compiler.NewCompiler(romFile, gb.Arch{})
-	err = comp.Compile()
+	pars := parser.NewParser(romFile)
+	err = comp.Parse()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "compile error: %s\n", err)
 		return
 	}
-
-	comp.WriteTo(os.Stdout)
 }
