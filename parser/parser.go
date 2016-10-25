@@ -22,7 +22,7 @@ type (
 	CompositeReg struct{ lo, hi Register8 }
 	Immediate16  uint16
 	Immediate8   uint16
-	Indirect     struct{ target Operand }
+	Indirect     struct{ Target Operand }
 	StaticParam  int
 	Condition    string
 
@@ -127,7 +127,6 @@ type BasicBlock struct {
 	Addr     Address // Starting address in the original machine code
 	CodeSize Size    // Size of original machine code, *including last jump instruction*
 	Body     []Instruction
-	HLValues []uint16
 	Cont     Continuation
 }
 
@@ -135,7 +134,6 @@ func (b *BasicBlock) instrIndex(ofs Address) (int, error) {
 	fmt.Fprintf(os.Stderr, "Locating instruction at %d\n", ofs)
 	curOfs := Address(0)
 	for i, instr := range b.Body {
-		fmt.Fprintf(os.Stderr, "%4d %s\n", instr.CodeSize, instr.output)
 		if ofs == curOfs {
 			return i, nil
 		} else if curOfs > ofs {
@@ -179,30 +177,43 @@ func (b *BasicBlock) Split(ofs Address) (prec, foll *BasicBlock, err error) {
 //
 // Parser (opcodes -> instructions -> structured program)
 //
+type BlockMap map[Address]*BasicBlock
 
-type Parser struct {
-	Input        io.ReadSeeker
-	Blocks       map[Address]*BasicBlock
+type Rom struct {
+	Blocks BlockMap
+}
+
+type parser struct {
+	input        io.ReadSeeker
+	blocks       BlockMap
 	codeRegions  []Address
-	CurInstrAddr Address
+	curInstrAddr Address
 }
 
-func NewParser(input io.ReadSeeker) Parser {
-	// Initialize the Parser so that compilation starts
-	// from address 0 in the code
-	comp := Parser{
-		Input:        input,
-		Blocks:       make(map[Address]*BasicBlock),
-		codeRegions:  []Address{0},
-		CurInstrAddr: Address(0),
+func Parse(input io.ReadSeeker) (*Rom, error) {
+	const InitAddr = 0
+	input.Seek(InitAddr, 0)
+	p := parser{
+		input:        input,
+		blocks:       make(map[Address]*BasicBlock),
+		codeRegions:  []Address{InitAddr},
+		curInstrAddr: Address(InitAddr),
 	}
-	comp.Blocks[0] = &BasicBlock{}
-	return comp
+	p.blocks[InitAddr] = &BasicBlock{}
+
+	if err := p.parse(); err != nil {
+		return nil, err
+	}
+
+	rom := &Rom{
+		Blocks: p.blocks,
+	}
+	return rom, nil
 }
 
-func (c *Parser) Parse() error {
+func (c *parser) parse() error {
 	for len(c.codeRegions) > 0 {
-		err := decoder.DecodeOpcode(c)
+		err := decodeOpcode(c)
 		if err == io.EOF {
 			if len(c.codeRegions) > 0 {
 				c.PlaceHalt()
@@ -216,53 +227,56 @@ func (c *Parser) Parse() error {
 	return nil
 }
 
-func (c *Parser) Address() Address {
-	addr, err := c.Input.Seek(0, 1)
+func (c *parser) Address() Address {
+	addr, err := c.input.Seek(0, 1)
 	if err != nil {
 		panic(fmt.Sprintf("can't get current pos in code stream: %v", err))
 	}
 	return Address(addr)
 }
 
-func (c *Parser) curRegion() Address {
+func (c *parser) curRegion() Address {
 	return c.codeRegions[len(c.codeRegions)-1]
 }
 
-func (c *Parser) pushRegion(addr Address) *BasicBlock {
+func (c *parser) pushRegion(addr Address) *BasicBlock {
 	newBlock := &BasicBlock{Addr: addr}
 	c.codeRegions = append(c.codeRegions, addr)
-	c.Blocks[addr] = newBlock
+	c.blocks[addr] = newBlock
 	return newBlock
 }
 
-func (c *Parser) popRegion() *BasicBlock {
+func (c *parser) popRegion() *BasicBlock {
 	addr := c.curRegion()
 	c.codeRegions = c.codeRegions[:len(c.codeRegions)-1]
-	return c.Blocks[addr]
+	return c.blocks[addr]
 }
 
-func (c *Parser) PushInstr(operation Operation, operands ...Operand) {
+func (c *parser) PushInstr(operation Operation, operands ...Operand) {
 	endAddr := c.Address()
 	addr := c.curRegion()
 	instr := Instruction{
-		CodeSize:  Size(endAddr - c.CurInstrAddr),
+		CodeSize:  Size(endAddr - c.curInstrAddr),
 		Operation: operation,
 		Operands:  operands,
 	}
-	c.Blocks[addr].Body = append(c.Blocks[addr].Body, instr)
-	c.CurInstrAddr = endAddr
+
+	fmt.Printf("instr %v %v\n", operation, operands)
+
+	c.blocks[addr].Body = append(c.blocks[addr].Body, instr)
+	c.curInstrAddr = endAddr
 }
 
-func (c *Parser) TargetBlock(addr Address) (*BasicBlock, error) {
-	if block, ok := c.Blocks[addr]; ok {
+func (c *parser) TargetBlock(addr Address) (*BasicBlock, error) {
+	if block, ok := c.blocks[addr]; ok {
 		// `block` is a basic block starting exactly at
 		// the needed address (a likely case, after a while)
 		return block, nil
 	}
 
 	// Look for target block in block map
-	for ofs, block := range c.Blocks {
-		if ofs <= addr && addr < ofs+block.CodeSize {
+	for ofs, block := range c.blocks {
+		if ofs <= addr && addr < ofs+Address(block.CodeSize) {
 			fmt.Fprintf(os.Stderr, "splitting block %04x+%d around %08X\n",
 				ofs, block.CodeSize, addr)
 			// Split block around the jump dest
@@ -270,8 +284,8 @@ func (c *Parser) TargetBlock(addr Address) (*BasicBlock, error) {
 			if err != nil {
 				return nil, err
 			}
-			c.Blocks[ofs] = prec
-			c.Blocks[addr] = foll
+			c.blocks[ofs] = prec
+			c.blocks[addr] = foll
 			return foll, nil
 		}
 	}
@@ -283,18 +297,18 @@ func (c *Parser) TargetBlock(addr Address) (*BasicBlock, error) {
 	return newBlock, nil
 }
 
-func (c *Parser) closeBlock(block *BasicBlock, cont Continuation) error {
+func (c *parser) closeBlock(block *BasicBlock, cont Continuation) error {
 	block.Cont = cont
-	block.CodeSize = c.Address() - block.Addr
+	block.CodeSize = Size(c.Address() - block.Addr)
 	if len(c.codeRegions) > 0 {
-		_, err := c.Input.Seek(int64(c.curRegion()), 0)
-		c.CurInstrAddr = c.curRegion()
+		_, err := c.input.Seek(int64(c.curRegion()), 0)
+		c.curInstrAddr = c.curRegion()
 		return err
 	}
 	return nil
 }
 
-func (c *Parser) forkRegion(cond Condition, target *BasicBlock) ContConditional {
+func (c *parser) forkRegion(cond Condition, target *BasicBlock) ContConditional {
 	cont := ContConditional{cond, target, nil}
 	if cond != CondAlways {
 		cont.Else = c.pushRegion(c.Address())
@@ -302,7 +316,7 @@ func (c *Parser) forkRegion(cond Condition, target *BasicBlock) ContConditional 
 	return cont
 }
 
-func (c *Parser) PlaceJump(cond Condition, dest Address) error {
+func (c *parser) PlaceJump(cond Condition, dest Address) error {
 	regBlock := c.popRegion()
 	endAddr := c.Address()
 	fmt.Fprintf(os.Stderr, "PlaceJump: block@%04x, jump instr ends at %08x (%v => %08x)\n",
@@ -319,7 +333,18 @@ func (c *Parser) PlaceJump(cond Condition, dest Address) error {
 	return c.closeBlock(regBlock, cont)
 }
 
-func (c *Parser) PlaceCall(cond Condition, dest Address) error {
+func (c *parser) PlaceDynamicJump() error {
+	// This is just a heuristic, that I expect to fail a good portion
+	// of times
+	regBlock := c.popRegion()
+	endAddr := c.Address()
+	fmt.Fprintf(os.Stderr, "PlaceJump: block@%04x, jump instr ends at %08x\n",
+		regBlock.Addr, endAddr)
+
+	return c.closeBlock(regBlock, ContDynamic{})
+}
+
+func (c *parser) PlaceCall(cond Condition, dest Address) error {
 	regBlock := c.popRegion()
 
 	targetBlock, err := c.TargetBlock(dest)
@@ -331,13 +356,13 @@ func (c *Parser) PlaceCall(cond Condition, dest Address) error {
 	return c.closeBlock(regBlock, ContCall{cont})
 }
 
-func (c *Parser) PlaceRet(cond Condition) error {
+func (c *parser) PlaceRet(cond Condition) error {
 	block := c.popRegion()
 	cont := c.forkRegion(cond, nil)
 	return c.closeBlock(block, ContRet{cont})
 }
 
-func (c *Parser) PlaceHalt() error {
+func (c *parser) PlaceHalt() error {
 	block := c.popRegion()
 	return c.closeBlock(block, ContHalt{})
 }

@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"gbrc/parser"
-	"gbrc/backend"
+	"gbrc/backend/assembly"
 )
 
 var (
@@ -26,8 +26,13 @@ func main() {
 		return
 	}
 
-	pars := parser.NewParser(romFile)
-	err = comp.Parse()
+	blocks, err := parser.Parse(romFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "parse error: %s\n", err)
+		return
+	}
+
+	err = assembly.Compile(*blocks, os.Stdout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "compile error: %s\n", err)
 		return
